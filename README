@@ -1,0 +1,1280 @@
+
+Analyse a polycrystal.
+^^^^^^^^^^^^^^^^^^^^^^
+
+    Daniel Mason 2022-2023
+    Copyright UKAEA 
+    note: this is not open source code and is not to be distributed
+
+
+    Finds the strain and orientation of atoms in a polycrystal.
+    Assigns atoms to grains.
+    Computes grain boundary and triple junction properties.
+    Finds distance of atoms to grain boundary.
+    Computes void content of polycrystal.
+    Generates simulated TEM image.
+    Performs simple image analysis.
+    Computes a reference-lattice optimised Wigner-Seitz analysis.
+    Finds elastic properties and relaxation volumes.
+    Generates random polycrystals
+    
+
+    Codes written in standard Fortran 95 and C
+    
+        
+compilation
+^^^^^^^^^^^
+
+    Build environment is cmake
+    Libraries needed 
+    
+        lapack
+        fftw3    
+        libpng
+    
+
+    Quick installation:
+    To compile the MPI versions, where available, you need to specify a MPI-compliant compiler.
+    If you're having insurmountable problems with "Cannot open module file ‘mpi_f08.mod’" type errors, then remove the line in ./CMakeLists.txt 
+    which reads "add_definitions(-DMPI)" and the serial version will be built. 
+    
+    
+    From the directory where you have unpacked the code
+    
+        > mkdir build
+        > cd build
+        
+
+    for gnu fortran ...
+        
+        > cmake ../ -DCMAKE_Fortran_COMPILER=mpifort
+    ... or for intel fortran
+        > cmake ../ -DCMAKE_Fortran_COMPILER=mpiifort -DCMAKE_C_COMPILER=mpicc
+
+        
+    then compile ...
+    
+        > make 
+    ... or optionally you can make in parallel on eg 4 processors using     
+        > make -j 4
+
+    
+     finally test the build
+     
+        > ctest   
+        
+        
+        
+
+
+
+
+
+
+
+
+
+
+        
+        
+    run with 
+        > ./bin/assignGrains.exe
+        > ./bin/grainProperties.exe
+        > ./bin/findVoids.exe
+        > ./bin/contourAnalyse.exe
+        > ./bin/rapf.exe
+        > ./bin/WS.exe
+        > ./bin/computeSaddle.exe
+        > ./bin/nanocrystal.exe
+
+    The concept of the void calculation is described in 
+        Mason et al (2021) Phys Rev Mater 5:095403
+
+    The basic workflow for finding voids is
+    
+    
+        1)  use assignGrains.exe to find the deformation gradient on each atom
+                    
+            ./bin/assignGrains.exe -f filename.xyz [ information about reference lattice + options ]
+            
+        2)  use findVoids.exe to find the voids
+        
+            ./bin/findVoids.exe -f filename.grains.xyz [ information about reference lattice + options ] 
+
+        This split has been made so that the strain fields can be explored separately. 
+        assignGrains will also extract grain information ( note all atoms have grain = 1 for a perfect crystal ).
+        
+    A more complex workflow is given in bin/example_run.sh
+    
+           
+     
+            
+   
+    assignGrains 
+    ^^^^^^^^^^^^ 
+    
+        Computes the deformation matrix describing the orientation and strain of each atom in the system.
+        Then uses DBSCAN to group atoms together into grains. 
+        Outputs an extended .xyz file 
+        
+            Lattice="A11 A21 A31 A12 A22 A32 A13 A23 A33" Properties=species:S:1:pos:R:3:grain:I:1:DeformationGradient:R:9:err:R:1
+
+            
+        Example:
+        
+    $ assignGrains.exe
+        
+    assignGrains.exe
+
+usage
+^^^^^
+    input files
+        -f <char>                  input filename
+        [-rm <char> ]              rotation matrix filename
+        [-T ]                      try to read deformation gradient in columns 6:14 of .xyz file (/ atom,x,y,z,grain,Txx,Tyx... /) [ default T ]
+
+    calculation
+        -a0 <float>                lattice parameter [ default 3.165 ]
+        [-lattice <char> ]         lattice type [ default "bcc" ]
+        [-rc <float> ]             neighbour cutoff for def grad calculation (latt param) [ default 1.500 ]
+        [-assign ]                 assign atoms to grains [ default T ]
+        [-rmin <float> ]           short range neighbour cutoff for matching atoms to reference (latt param) [ default 0.5000 ]
+        [-angle <float> ]          max deviation angle to place atom in uncertain grain [ default 5.000 ]
+        [-s <int> ]                grains containing fewer atoms than this are eliminated [ default 15 ]
+
+    output files
+        [-o <char> ]               output filename
+        [-opDefGrad ]              output deformation gradient early, before clustering [ default F ]
+        [-opStrain ]               instead of deformation gradient, output the strain [ default F ]
+        [-opGrains ]               output grains as individual files [ default F ]
+
+    debug
+        [-dbg <float_array> ]      debug a particular atom close to this point
+
+        
+    
+        
+        
+            
+    
+    grainProperties 
+    ^^^^^^^^^^^^^^^ 
+    
+        Using the assigned grain indices, compute triangulated surfaces describing the grain boundary positions.
+        Uses these to reascribe most probable grain indices where possible.
+        Output grain boundary areas, triple junction lines, and the distance of atoms to a grain boundary.
+        
+        Expects as input an extended .xyz file
+            Lattice="A11 A21 A31 A12 A22 A32 A13 A23 A33" Properties=species:S:1:pos:R:3:grain:I:1:DeformationGradient:R:9[:err:R:1] 
+        
+        Outputs an extended .xyz file            
+            Lattice="A11 A21 A31 A12 A22 A32 A13 A23 A33" Properties=species:S:1:pos:R:3:grain:I:1:DeformationGradient:R:9[:err:R:1]:distance:R:1
+
+            
+        
+        Example:
+        
+        
+$ grainProperties
+grainProperties.exe
+
+usage
+^^^^^
+    input files
+        -f <char>               input filename
+        [-dgf <char> ]          file containing deformation gradients of each grain
+
+    calculation
+        [-rc <float> ]          node spacing [ default 5.000 ]
+        [-d ]                   compute distance of atom to grain boundary [ default F ]
+        [-rc_tri <float> ]           grain boundary distance calculation cut-off [ default 10.00 ]
+        [-rc_tri_nDiv <int> ]        divisions for grain boundary distance calculation [ default 10 ]
+        [-lattice <char> ]         lattice type (use symmetry for orientation mismatch) [ default "bcc" ]
+
+    output files
+        [-o <char> ]            output filename
+        [-chgcar ]              output grains as .chgcar [ default F ]
+        [-opTJ ]                output TJ lines as .xyz [ default F ]
+        [-full ]                full report for each grain, GB, TJ etc [ default T ]
+
+    debug
+        [-dbg <float_array> ]   debug a particular atom close to this point
+        
+        
+        
+        
+        
+    findVoids
+    ^^^^^^^^^
+    
+        Finds regions of empty space inside a crystal.
+        
+        Expects as input an extended .xyz file
+            Lattice="A11 A21 A31 A12 A22 A32 A13 A23 A33" Properties=species:S:1:pos:R:3:grain:I:1:DeformationGradient:R:9[:err:R:1:distance:R:1]
+            
+        Generates multiple outputs, including .chgcar density maps, .xyz format phase fields, and simulated TEM images.     
+        
+        Example:
+        
+        $ findVoids
+findVoids.exe
+    finds voids in an .xyz file
+
+usage
+^^^^^
+    input/output
+        -f <char>                    input filename
+        -a0 <float>                  unit cell dimension (A) [ default 3.000 ]
+        [-lattice <char> ]           lattice type (bcc/fcc) [ default "bcc" ]
+        [-o <char> ]                 output filename
+        [-D <float> ]                .xyz input file has GB distance in column 16, with -ve distance inside grain. Use phase field in Grain region if D<0 and Boundary region if D>0
+        [-Psi <char> ]               location of Psi phase field file
+
+    void detect
+        [-void ]                     perform void detection [ default T ]
+        [-rescaleVacVol ]              rescale monovac volume using smallest voids [ default F ]
+        [-isolevel <float> ]         isolevel used (extrapolated to 1) [ default 1.050 ]
+        [-M <int> ]                  voxel grid refinement [ default 4 ]
+        [-minVol <float> ]           smallest void volume (omega0) [ default 0.5000 ]
+        [-chgcar ]                   output phase field as .chgcar [ default F ]
+        [-opPsiAsXyz ]               output phase field as .xyz [ default F ]
+        [-opDistancePhaseField ]              output distance phase field along with psi in same .xyz [ default F ]
+        [-findXYZOffset ]              find offset of atoms in .xyz file [ default F ]
+        [-offset ]                   remove any global supercell offsets generated internally [ default T ]
+        [-addOffset <float_array> ]  add a global offset
+
+    dynamical 2 beam
+        [-D2BI ]                     generate dynamical 2 beam image [ default F ]
+        [-D2BI_V <float> ]           accelerating voltage (keV) [ default 150.0 ]
+        [-D2BI_xi0 <float> ]         xi_0(A)) [ default 103.9 ]
+        [-D2BI_xig <float> ]         xi_g(A)) [ default 207.5 ]
+        [-D2BI_g <float_array> ]     g-vector (reduced, eg [110]) [ default 1.0000,1.0000,0.0000 ]
+        [-D2BI_k <float_array> ]     base k-vector (direction, eg [001], to be tweaked by deviation parameter) [ default 0.0000,0.0000,1.0000 ]
+        [-D2BI_m <int_array> ]       voxel multiplier (xy_pixels,z_divisions) [ default 4,4 ]
+        [-D2BI_sg <float> ]          value for deviation parameter s_g (leave unset for fixed k-vector)
+        [-D2BI_sg_sig <float> ]      value for deviation parameter broadening
+        [-D2BI_sg_N <int> ]          value for deviation parameter broadening samples (default 10 if sg_sig set)
+        [-D2BI_w <float> ]           value for deviation parameter w = xi_g s_g
+        [-D2BI_ng <float> ]          value for deviation parameter (g,ng)
+
+
+        
+        
+        
+         
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+    contourAnalyse
+    ^^^^^^^^^^^^^^
+    
+        Produces a simple image analysis of a .png file or an ascii .dat file with format
+            # comment lines
+            Nx Ny
+            dat(1:Nx,1)
+            dat(1:Nx,2)
+            ...
+            dat(1:Nx,Ny)            
+        Can be used to generate a .png file from a .dat file.    
+            
+        Example:
+                
+    contourAnalyse.exe
+        performs filtering and contour analysis of a .png file
+        or .dat file with format
+        # comment lines
+        Nx Ny
+        dat(1:Nx,1)
+        dat(1:Nx,2)
+        ...
+    
+    usage
+    ^^^^^
+        input/output
+            -f <char>                            filename
+            [-o <char> ]                         output filename [ default "[input file prefix]" ]
+            [-negative ]                                take negative (.png only) [ default F ]
+    
+        filtering
+            [-sigma <float> ]                    blur radius
+            [-sandp ]                            remove salt and pepper noise [ default F ]
+            [-hstripe <int_array> ]                remove horizontal stripes
+            [-vstripe <int_array> ]                remove vertical stripes
+            [-localFilter <float> ]              set range for max likelihood filter ( eg 1.0 )
+            [-n <int_array> ]                    nFourierCoeffs to remove/retain
+            [-removeAvg ]                        remove average [ default F ]
+            [-opLPF ]                            output low pass filter [ default F ]
+            [-opHPF ]                            output high pass filter [ default F ]
+            [-norm ]                             normalise output pngs to 0:1 [ default F ]
+            [-abs ]                              prefilter f=abs(f-<f>) [ default F ]
+            [-sqrt ]                             prefilter f=sqrt(abs(f-<f>)) [ default F ]
+            [-strainToTEM ]                             strain to TEM [ default F ]
+            [-TEM <float_array> ]               strain<->TEM parameters (xig,sg,|g|,zmax) [ default 0.0000,0.0000,0.0000,... ]
+            [-TEMtostrain ]                              TEM to strain [ default F ]
+            [-flattenLinearThresh <float> ]      flatten image where features circularity over this level (eg 4.0)
+            [-dbg_px <int_array> ]                 debug pixel [ default -1,-1 ]
+    
+        correlation fn
+            [-cf_nbins <int> ]                    number of correlation function bins
+            [-cf_rmax <float> ]                   correlation function max radius (default N/2 px)
+    
+        contour analysis
+            [-nLevels <int> ]                    number of isolevels (set 0 for off) [ default 0 ]
+            [-iso_min <float> ]                  minimum isolevel [ default 0.000 ]
+            [-iso_max <float> ]                  maximum isolevel [ default 1.000 ]
+            [-iso_auto ]                         auto set isolevels [ default F ]
+            [-pbc ]                              periodic boundary conditions ( warning - currently buggy if shapes thread cell ) [ default F ]
+            [-nRepeat <int> ]                    pseudo periodic boundary image repeats ( workaround for buggy pbc ) [ default 1 ]
+            [-op_tmp ]                           output temporary images [ default T ]
+            [-op_contour ]                       output contour plot [ default F ]
+    
+            
+                
+
+    rapf
+    ^^^^
+    
+    radiallyAveragedPowerFunction.exe
+     finds radially averaged power spectrum from FFT
+    
+    usage
+    ^^^^^
+             -f <char>                 input filename (.png format)
+            [ -o <char> ]              output filename prefix ( defaults to input file )
+            [ -N <int> ]               number of q radius divisions
+            [ -r_min <float> ]         minimum radius [ default 2.000 ]
+            [ -pbc ]                   assume periodic boundary conditions [ default T ]
+    
+    
+            
+            
+            
+            
+            
+            
+            
+            
+    WS
+    ^^
+    
+    Performs a Wigner-Seitz analysis to find the number and location of vacancies and interstitials.
+    
+    The Wigner-Seitz analysis imagines a reference lattice with lattice points y_j.
+    For each atom in the system at position x_i, it finds the nearest reference lattice site.
+    The occupation of reference site j is incremented by 1 if atom i is closer to j than any other site.
+    When all atoms have been considered, reference sites with no atoms assigned to them have occupation 0 and are called "vacancies".
+    Reference sites with more than one atom assigned to them have occupation > 1 and are called "interstitials".
+    Note that a reference site can have occupation 2,3,...
+    
+    The part which is not often explained is the first line. What is the reference lattice?
+    The guiding principle is: the best reference lattice is the one which produces the fewest point defects.
+    This implementation helps you find it.
+    It will compute the best reference lattice _offset_ which minimises the number of point defects.
+    Note that this is a 3d optimisation problem for which I have no gradient data - it is a lot slower than ovito, but still works when you have heavily deformed cells.
+    If you're absolutely desperate to find the WS result without checking for the offset, use -off x,y,z to fix the offset.
+    
+    NOTE: 
+    
+    The first version of this code used -N0 to input the reference crystal lattice repeats. 
+    The correct input option is now -Nref to be consistent with the internal code. 
+    
+    usage:
+    
+    >  WS
+ 
+WS.exe
+
+usage
+^^^^^
+         -f <char>                  input filename
+        [ -N <int_array> ]          primitive cell repeats [ default 0,0,0,... ]
+        [ -Nref <int_array> ]         reference primitive cell repeats [ default 0,0,0,... ]
+         -a0 <float_array>          lattice parameter(s)
+        [ -T ]                      try to read deformation gradient in columns 6:14 of .xyz file (/ atom,x,y,z,grain,Txx,Tyx... /) [ default T ]
+        [ -deltan <int_array> ]     change in primitive cell repeats [ default 0,0,0,... ]
+        [ -off <float_array> ]      fix reference lattice offset ( A units )
+        [ -lattice <char> ]         lattice type [ default "bcc" ]
+
+
+
+
+    You can offer the information you have available.
+    
+    
+    If you know the expected lattice parameter and lattice type, use eg:
+        > WS.exe -f test.xyz -a0 3.1652 -lattice "bcc"        
+        
+    This will try to guess the number of primitive lattice repeats given the supercell and the lattice.  
+        
+        
+    If you have the deformation gradient data produced using assignGrains:
+        > WS.exe -f test.grain.xyz -a0 3.1652 -lattice "bcc"        
+        
+    This will try to guess the number of primitive lattice repeats given the average strain and rotation in the cell.
+    Note that you need the lattice parameter still, because the deformation gradient is with respect to a given unstrained reference.
+    
+        
+    If you happen to know the correct number of primitive lattice repeats, you don't even need the lattice parameter.
+        > WS.exe -f test.xyz  -lattice "bcc" -N 0,32,32,32,0,32,32,32,1
+        
+    
+    If you also know what reference system you started with, you can get extra information about the plastic change.
+        > WS.exe -f test.xyz  -lattice "bcc" -N 0,32,32,32,0,32,32,32,1 -a0 3.1652 -Nref 0,32,32,32,0,32,32,32,0
+        > WS.exe -f test.grain.xyz  -lattice "bcc" -a0 3.1652 -Nref 0,32,32,32,0,32,32,32,0
+                  
+      
+    If you'd like to check what happens with a different number of repeats, use -deltan to change them.    
+        
+        
+        
+        
+    Example: 3 dpa CRA calculation using 1.6M atoms.
+    The original undamaged crystal had 64x64x200 conventional u.c. with lattice parameter 3.1652.
+    I have used assignGrains to find its deformation gradients.
+         
+        
+    > ./bin/WS.exe -f Data/CRAMD/DONE-case-4800-1600.grain.xyz -a0 3.1652 -Nref 0,64,64,64,0,64,200,200,0
+$ ./bin/WS.exe -f Data/CRAMD/DONE-case-4800-1600.grain.xyz -a0 3.1652 -Nref 0,64,64,64,0,64,200,200,0
+WS.exe
+
+
+ WS.exe
+ ^^^^^^
+ file handling
+     input filename         Data/CRAMD/DONE-case-4800-1600.grain.xyz
+     output filename        Data/CRAMD/DONE-case-4800-1600.grain.ws.xyz
+
+ crystal
+     lattice                bcc
+     ref periodic repeats              0          64          64          64           0          64         200         200           0
+     a0                        3.1652000000000000        3.1652000000000000        3.1652000000000000
+     attempt read def grad   T
+     deltan                            0           0           0           0           0           0           0           0           0
+
+
+ reading input file
+ ^^^^^^^^^^^^^^^^^^
+
+Lattice="   202.79800     0.00000     0.00000     0.00000   202.79800     0.00000     0.00000     0.00000   635.56422" Properties=species:S:1:pos:R:3:grain:I:1:DeformationGradient:R:9:motif:I:1
+  W           -89.636000       56.734300      -36.465700        1.000000        0.996106       -0.006516        0.006033       -0.003910        1.000721        0.001599       -0.009096       -0.007611        1.014621        1.000000
+  W           -83.384000       56.721500      -33.379000        1.000000        1.005926       -0.012098       -0.000171       -0.003857        0.997975       -0.008106       -0.005094       -0.004747        0.999813        1.000000
+  W           -89.638000       56.763200      -42.954900        1.000000        0.999739        0.009787       -0.013257       -0.001330        1.000312        0.016896       -0.004147       -0.006115        1.005288        1.000000
+... reading ...
+  W           -68.215000      -41.066000     -116.885000        1.000000        0.993513       -0.008175       -0.026407        0.008399        0.996527        0.004923        0.006951       -0.004673        0.994329        1.000000
+  W           -68.093000      -47.373000     -116.878000        1.000000        0.995106       -0.009912       -0.024077        0.000961        1.012324        0.005358        0.007596       -0.002251        0.987576        1.000000
+  W           -68.073000      -34.812000     -116.877000        1.000000        0.992920        0.002317       -0.027921       -0.005647        1.006677        0.007122        0.013914       -0.006503        0.994316        1.000000
+XYZFile[Data/CRAMD/DONE-case-4800-1600.grain.xyz]
+  header lines:            0
+  data columns:           14
+  atoms       :      1638400
+  atom names  : W
+  atom counts
+    W      1638400 (100.000 %)
+   column  type  (atom)         average         minimum         maximum
+        x float  W        -0.367368        -101.398         101.399
+        y float  W         0.116660        -101.398         101.399
+        z float  W        -0.908053E-01    -317.461         317.034
+        4 float  W         0.999999         0.00000         1.00000
+        5 float  W          1.00049        0.464691         1.19222
+        6 float  W        -0.279121E-04   -0.811541        0.857292
+        7 float  W        -0.906175E-03   -0.864015        0.895039
+        8 float  W        -0.314519E-04   -0.803568        0.815114
+        9 float  W          1.00135        0.464278         1.27336
+       10 float  W         0.907546E-03   -0.793117        0.824176
+       11 float  W        -0.145138E-03   -0.804605        0.875473
+       12 float  W        -0.341437E-02   -0.800544        0.820966
+       13 float  W         0.998933        0.446097         1.22676
+       14 float  W          1.00000         1.00000         1.00000
+
+
+ finding supercell
+ ^^^^^^^^^^^^^^^^^
+
+ Lib_XYZFiles::getSupercell0 info - file interpretted as extended-xyz format
+ WS.exe info - supercell read from file
+  202.79800000    0.00000000    0.00000000
+    0.00000000  202.79800000    0.00000000
+    0.00000000    0.00000000  635.56422000
+
+ establish lattice type
+ ^^^^^^^^^^^^^^^^^^^^^^
+Lattice [bcc   ,cubic       ,nMotif=   1,nNeigh(max)=  15]
+        neighbours, motif  1
+       0.000   0.000   0.000
+      -0.500  -0.500  -0.500
+      -0.500  -0.500   0.500
+      -0.500   0.500  -0.500
+       0.500  -0.500  -0.500
+      -0.500   0.500   0.500
+       0.500  -0.500   0.500
+       0.500   0.500  -0.500
+       0.500   0.500   0.500
+      -1.000   0.000   0.000
+       0.000  -1.000   0.000
+       0.000   0.000  -1.000
+       0.000   0.000   1.000
+       0.000   1.000   0.000
+       1.000   0.000   0.000
+
+
+ computing average deformation gradients
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ WS.exe info - average def grad/strain/rot mat
+    1.00101772   -0.00004463   -0.00016083        0.00101759   -0.00004320   -0.00054161        0.99999993   -0.00000026    0.00038030
+   -0.00004164    1.00186402   -0.00342382       -0.00004320    0.00186908   -0.00125883        0.00000108    0.99999767   -0.00216094
+   -0.00092172    0.00090096    0.99947140       -0.00054161   -0.00125883   -0.00052871       -0.00038030    0.00216094    0.99999759
+
+ WS.exe info - lattice established from average deformation gradient in input file grain 1.
+ComplexSupercell [nodes =  1646592]
+  periodic repeat vectors A
+    202.79800000    0.00000000    0.00000000
+      0.00000000  202.79800000    0.00000000
+      0.00000000    0.00000000  635.56422000
+  primitive unit cell vectors b
+     -1.58435938    1.58435938    1.58435938
+      1.57647699   -1.59224176    1.59224176
+      1.58100552    1.58100552   -1.58100552
+  unit cell vector repeats A = b n
+               0            64           202
+              64             0           201
+              64            64             1
+
+
+ plastic strain report
+ ^^^^^^^^^^^^^^^^^^^^^
+ WS.exe info - reference supercell, reference primitive repeats
+  202.57280000    0.00000000    0.00000000                 0            64           200
+    0.00000000  202.57280000   -0.00000000                64             0           200
+    0.00000000    0.00000000  633.04000000                64            64             0
+
+ WS.exe info - reference strain analysis
+     A' = (1 + eps_e ) R ( 1 + eps_p ) A
+             (commensurate) elastic strain                                plastic strain                                      rotation
+    0.00111170    0.00000000   -0.00000000        0.00000000    0.00000000    0.00000000        1.00000000    0.00000000   -0.00000000
+    0.00000000    0.00111792   -0.00249392        0.00000000    0.00000000    0.00250000        0.00000000    1.00000000    0.00000358
+   -0.00000000   -0.00249392   -0.00100128        0.00000000    0.00250000    0.00500000        0.00000000   -0.00000358    1.00000000
+
+ WS.exe info - lattice sites (ref)      1638400  (this)      1646592  (diff)        8192
+
+ WS.exe info - lattice site number changes if primitive repeats are changed (deltan = + 1)
+        -12864         12800          4096
+         12864        -12928          4096
+         12864         12928         -4096
+
+
+ establish link-cell list
+ ^^^^^^^^^^^^^^^^^^^^^^^^
+LinkCell3D [Nmax0/cell =    7,nPoints =        0,nNodes =   819200]
+    Supercell[Nx,Ny,Nz =   64,  64, 200 ]
+      lattice vectors
+          3.16871875    0.00000000    0.00000000
+          0.00000000    3.16871875    0.00000000
+          0.00000000    0.00000000    3.17782110
+
+
+ establish output file
+ ^^^^^^^^^^^^^^^^^^^^^
+ Lib_XYZFiles::setnColumns0 info - allocating            4  columns for      1638400  atoms
+ Lib_XYZFiles::setnColumns0 info - memory usage    56.1951218      Mb
+
+
+ Wigner-Seitz analysis
+ ^^^^^^^^^^^^^^^^^^^^^
+ search range    2.7377094058954206
+ loop            1  range    1.2566189242471422       n_pd        12665
+ loop            2  range   0.41887297474904739       n_pd        12550
+ loop            3  range   0.13962432491634913       n_pd        12505
+ WS.exe info - headline result nLatt,nAtoms,nV,nI,nPD =      1646592     1638400       10350        2158       12508
+
+ WS.exe info - position of motif points in reference lattice
+ motif            1 -0.95361196377470803      -0.72287535181835527       0.95374868026241144
+
+renamed 'Data/CRAMD/DONE-case-4800-1600.grain.ws.xyz.tmp' -> 'Data/CRAMD/DONE-case-4800-1600.grain.ws.xyz'
+
+ timing data:
+    read file    8.2151857000000010
+    init         2.0749330000000001
+    WS           69.854004200000006
+    output       1.7008366000000001
+    total        82.166636600000004
+
+
+ done
+
+
+    
+ 
+ alternative attempt assuming original reference lattice
+   >  ./bin/WS.exe -f Data/CRAMD/DONE-case-4800-1600.grain.xyz -a0 3.1652 -N 0,64,64,64,0,64,200,200,0
+
+   ...
+   
+ WS.exe info - headline result nLatt,nAtoms,nV,nI,nPD =      1638400     1638400       14814       14814       29628
+
+ WS.exe info - position of motif points in reference lattice
+ motif            1 -0.86261996442669542       0.62918425267161027       -1.0013388160296617
+
+   
+   
+ alternative attempt assuming original reference lattice , no offset checking ( note that I usually use fixed lattice offset a0/4 = 0.7913 )
+   >  ./bin/WS.exe -f Data/CRAMD/DONE-case-4800-1600.grain.xyz -a0 3.1652 -N 0,64,64,64,0,64,200,200,0 -off 0.7913,0.7913,0.7913
+
+   ...
+        
+WS.exe info - headline result nLatt,nAtoms,nV,nI,nPD =      1638400     1638400       57953       57953      115906
+
+ WS.exe info - position of motif points in reference lattice
+ motif            1  0.79130000000000000       0.79130000000000000       0.79130000000000000
+
+renamed 'Data/CRAMD/DONE-case-4800-1600.grain.ws.xyz.tmp' -> 'Data/CRAMD/DONE-case-4800-1600.grain.ws.xyz'
+
+ timing data:
+    read file    7.5083060000000001
+    init         9.6075000000000015E-003
+    WS           1.2402360000000001
+    output       1.5499740000000002
+    total        10.637284400000000
+    
+cf ovito nvac = 57954
+
+
+
+
+Improvement 23/02/23
+    WS.exe now has the option to automatically scan some possible alternate lattice repeats.
+    This is one by examining (b^-1 A) - nint( b^-1 A ) , the possible error on the number of lattice repeats due to taking an integer number of primitive cells.
+    A few possible options are given, each selecting only one element of N to be changed. No choice is offered yet to try changing multiple elements of N.
+    Select this option with -check.
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    computeSaddle.exe
+    ^^^^^^^^^^^^^^^^^
+    
+A simple NEB calculator, developed as part of the accelerated MD project. 
+Allows for a reasonably easy input command line to compute a nudged elastic band saddle point between two input states, without necessarily needing to match atom ids.
+Use LAMMPS if you can, if you can't ... here you go.
+There is also some additional functionality here to return elastic and dipole tensor properties of a structure, which can be useful.
+
+The downside is that you need specially .xml formatted potentials developed for the atomic oKMC project.
+Format example
+
+<EAM_Alloy n="2" name="W,D" E0="    -8.94946,    -2.40997" mass="183.84,1.0" >
+  <QuinticSplineEven type="F" N="1001" xmin="0.0" xmax="     18.32342050" comment="F(W)" >
+      0.00000000
+     -1.36961633
+     -1.91637785
+     -2.32835154
+     -2.67060467                                                                                         F(rho) values for rho=0 to 18.323
+     -2.96822061     
+    ...     
+  </QuinticSplineEven>
+  <QuinticSplineEven type="phi" N="1001" xmin="0.0" xmax="      4.64995591" comment="phi(W)"  >
+      0.51304656
+      0.51180969
+      0.51057420
+      0.50934009                                                                                         phi(r) values   
+      ....    
+  </QuinticSplineEven>
+  <QuinticSplineEven type="F" N="1001" xmin="0.0" xmax="     18.32342050" comment="F(D)"  />
+  <QuinticSplineEven type="phi" N="1001" xmin="0.0" xmax="      4.64995591" comment="phi(D)" />
+  <QuinticSplineEven type="V" N="1001" xmin="0.0" xmax="      4.64995591" comment="V(W,W)" />
+  <QuinticSplineEven type="V" N="1001" xmin="0.0" xmax="      4.64995591" comment="V(H,W)" />
+  <QuinticSplineEven type="V" N="1001" xmin="0.0" xmax="      4.64995591" comment="V(H,H)" />
+   
+</EAM_Alloy>   
+
+
+    usage
+    ^^^^^
+    
+    $ ./bin/computeSaddle.exe
+computeSaddle.exe
+
+usage
+^^^^^
+         -f1 <char>               input filename 1
+        [ -f2 <char> ]            input filename 2
+        [ -o <char> ]             output filename
+         -p <char>                potential filename
+        [ -opxyz ]                output relaxed configs [ default T ]
+        [ -R0 <float> ]           relaxation radius [ default 10.00 ]
+        [ -d <float> ]            maximum displacement ( default to rc/4 )
+        [ -deltax <float_array> ] move central atom by this displacement to generate after state
+        [ -atom <int> ]           central moving atom [ default 1 ]
+        [ -CG ]                   CG relax before/after states first [ default T ]
+        [ -elastic ]              compute elastic constants [ default T ]
+        [ -dipole ]               compute dipole tensor [ default T ]
+        [ -n <int> ]              number of NEB replicas [ default 7 ]
+        [ -dbg ]                  debug [ default F ]
+        [ -strain <float_array> ] add strain ( 1 component hydrostatic, 3 = iso, 9 = aniso )
+
+
+        
+    You need to specify the centre of the action by giving an indication of an atom number in the centre of the rearrangement "-atom"        
+    and the radius of a sphere within which the relaxation is considered "-R0"
+    You can also specify a single file and atom to move, and displace it by "-deltax" 
+    
+example
+^^^^^^^
+
+This code finds the formation energy and relaxation volume of a monovacancy
+
+    $  ./bin/computeSaddle.exe -f1 Data/Simple_W_cases/monovac_W_12.00000.xyz -p Data/Potentials/EAM_MNB_W.xml -elastic
+computeSaddle.exe
+
+
+ input filename1     : "Data/Simple_W_cases/monovac_W_12.00000.xyz"
+ output filename     : "Data/Simple_W_cases/monovac_W_12.00000"
+ potential filename  : "Data/Potentials/EAM_MNB_W.xml"
+ start with CG relax :  T
+ debug               :  F
+
+
+ reading potential file
+ ^^^^^^^^^^^^^^^^^^^^^^
+
+EAM_PotentialTables::inputFromXML1 info - reading phi( 1) "183.84"
+EAM_PotentialTables::inputFromXML1 info - reading V( 1, 1) "183.84"
+EAM_PotentialTables::inputFromXML1 info - reading F( 1) "183.84"
+ computeSaddle.exe info - potential read from file
+
+
+ reading input file 1
+ ^^^^^^^^^^^^^^^^^^^^
+
+Lattice="37.982429 0 0 0 37.982429 0 0 0 37.982429" Properties=species:S:1:pos:R:3:energy:R:1
+  W             0.000773        0.000773        0.000773        0.000000
+  W             1.583318        1.583318        1.583318       -0.000440
+  W             3.165863        0.000773        0.000773        0.000000
+... reading ...
+  W            33.234221       36.399311       36.399311        0.000000
+  W            34.816766       34.816766       34.816766        0.000000
+  W            36.399311       36.399311       36.399311        0.000000
+ Lib_XYZFiles::getSupercell0 info - file interpretted as extended-xyz format
+ computeSaddle.exe info - supercell read from file
+   37.982429000000003        0.0000000000000000        0.0000000000000000
+   0.0000000000000000        37.982429000000003        0.0000000000000000
+   0.0000000000000000        0.0000000000000000        37.982429000000003
+XYZFile[Data/Simple_W_cases/monovac_W_12.00000.xyz]
+  header lines:            0
+  data columns:            4
+  atoms       :         3455
+  atom names  : W
+  atom counts
+    W         3455 (100.000 %)
+   column  type  (atom)         average         minimum         maximum
+        x float  W          18.2021        0.772730E-03     36.4009
+        y float  W          18.2021        0.772730E-03     36.4009
+        z float  W          18.2021        0.772730E-03     36.4009
+        4 float  W         0.108171E-02   -0.540352E-02    0.271091
+ Lib_XYZFiles::setnColumns0 info - allocating            4  columns for         3455  atoms
+ Lib_XYZFiles::setnColumns0 info - memory usage   0.118502289      Mb
+ atom name "W" in .xyz file is type            1  in potential file
+
+
+ construct simpleMD
+ ^^^^^^^^^^^^^^^^^^
+
+MD [PE,KE,total =         3.742865,        0.000000,        3.742865 T(PE),T(KE)         8.381248,        0.000000 ]
+    dt,beta,T =         1.000000,        0.000000,        0.000000
+    LinkCell3D [Nmax0/cell =   14,nPoints =     3455,nNodes =      512]
+        Supercell[Nx,Ny,Nz =    8,   8,   8 ]
+          lattice vectors
+              4.74780363    0.00000000    0.00000000
+              0.00000000    4.74780363    0.00000000
+              0.00000000    0.00000000    4.74780363
+    EAM_Alloy
+
+
+ relax file 1
+ ^^^^^^^^^^^^
+
+ computeSaddle.exe info - CG relax returns before    3.7311190222565660
+computeSaddle.exe info -  elastic constants (eV/A^3)
+         3.26315         1.27896         1.27896        -0.00000        -0.00000        -0.00000
+         1.27896         3.26315         1.27896        -0.00000        -0.00000        -0.00000
+         1.27896         1.27896         3.26315        -0.00000        -0.00000        -0.00000
+        -0.00000        -0.00000        -0.00000         1.00233        -0.00000        -0.00000
+        -0.00000        -0.00000        -0.00000        -0.00000         1.00233        -0.00000
+        -0.00000        -0.00000        -0.00000        -0.00000        -0.00000         1.00233
+ c11             3.2631543178503928       =    522.81492618280595      GPa
+ c12             1.2789582332190292       =    204.91168641137952      GPa
+ c44             1.0023302282276223       =    160.59099669758402      GPa
+ mu             0.99209804231568177       =    158.95161988571323      GPa
+ nu             0.28157783825015598
+
+computeSaddle.exe info -  dipole tensor (eV)
+       -11.29229        -0.00000        -0.00000
+        -0.00000       -11.29229        -0.00000
+        -0.00000        -0.00000       -11.29229
+volume supercell      54795.91762 A^3
+volume change            -5.81949 A^3
+ Lib_XYZFiles::setnColumns0 info - allocating            4  columns for         3455  atoms
+ Lib_XYZFiles::setnColumns0 info - memory usage   0.118502289      Mb
+renamed 'Data/Simple_W_cases/monovac_W_12.00000.relax1.xyz.tmp' -> 'Data/Simple_W_cases/monovac_W_12.00000.relax1.xyz'
+
+ done
+
+
+ 
+In this file atom 943 is next to the vacancy, so I can find the saddle by displacing it.
+
+
+$  ./bin/computeSaddle.exe -f1 Data/Simple_W_cases/monovac_W_12.00000.xyz -p Data/Potentials/EAM_MNB_W.xml -atom 943 -deltax 1.6,1.6,1.6
+computeSaddle.exe
+
+
+ input filename1     : "Data/Simple_W_cases/monovac_W_12.00000.xyz"
+ central atom        :          943
+ displace atom       :    1.6000000000000001        1.6000000000000001        1.6000000000000001
+ output filename     : "Data/Simple_W_cases/monovac_W_12.00000"
+ potential filename  : "Data/Potentials/EAM_MNB_W.xml"
+ start with CG relax :  T
+ debug               :  F
+
+
+ reading potential file
+ ^^^^^^^^^^^^^^^^^^^^^^
+
+EAM_PotentialTables::inputFromXML1 info - reading phi( 1) "183.84"
+EAM_PotentialTables::inputFromXML1 info - reading V( 1, 1) "183.84"
+EAM_PotentialTables::inputFromXML1 info - reading F( 1) "183.84"
+ computeSaddle.exe info - potential read from file
+
+
+ reading input file 1
+ ^^^^^^^^^^^^^^^^^^^^
+
+Lattice="37.982429 0 0 0 37.982429 0 0 0 37.982429" Properties=species:S:1:pos:R:3:energy:R:1
+  W             0.000773        0.000773        0.000773        0.000000
+  W             1.583318        1.583318        1.583318       -0.000440
+  W             3.165863        0.000773        0.000773        0.000000
+... reading ...
+  W            33.234221       36.399311       36.399311        0.000000
+  W            34.816766       34.816766       34.816766        0.000000
+  W            36.399311       36.399311       36.399311        0.000000
+ Lib_XYZFiles::getSupercell0 info - file interpretted as extended-xyz format
+ computeSaddle.exe info - supercell read from file
+   37.982429000000003        0.0000000000000000        0.0000000000000000
+   0.0000000000000000        37.982429000000003        0.0000000000000000
+   0.0000000000000000        0.0000000000000000        37.982429000000003
+XYZFile[Data/Simple_W_cases/monovac_W_12.00000.xyz]
+  header lines:            0
+  data columns:            4
+  atoms       :         3455
+  atom names  : W
+  atom counts
+    W         3455 (100.000 %)
+   column  type  (atom)         average         minimum         maximum
+        x float  W          18.2021        0.772730E-03     36.4009
+        y float  W          18.2021        0.772730E-03     36.4009
+        z float  W          18.2021        0.772730E-03     36.4009
+        4 float  W         0.108171E-02   -0.540352E-02    0.271091
+ Lib_XYZFiles::setnColumns0 info - allocating            4  columns for         3455  atoms
+ Lib_XYZFiles::setnColumns0 info - memory usage   0.118502289      Mb
+ atom name "W" in .xyz file is type            1  in potential file
+
+
+ construct simpleMD
+ ^^^^^^^^^^^^^^^^^^
+
+MD [PE,KE,total =         3.742865,        0.000000,        3.742865 T(PE),T(KE)         8.381248,        0.000000 ]
+    dt,beta,T =         1.000000,        0.000000,        0.000000
+    LinkCell3D [Nmax0/cell =   14,nPoints =     3455,nNodes =      512]
+        Supercell[Nx,Ny,Nz =    8,   8,   8 ]
+          lattice vectors
+              4.74780363    0.00000000    0.00000000
+              0.00000000    4.74780363    0.00000000
+              0.00000000    0.00000000    4.74780363
+    EAM_Alloy
+
+
+ relax file 1
+ ^^^^^^^^^^^^
+
+ computeSaddle.exe info - CG relax returns before    3.7311190222565660
+computeSaddle.exe info -  elastic constants (eV/A^3)
+         3.26315         1.27896         1.27896        -0.00000        -0.00000        -0.00000
+         1.27896         3.26315         1.27896        -0.00000        -0.00000        -0.00000
+         1.27896         1.27896         3.26315        -0.00000        -0.00000        -0.00000
+        -0.00000        -0.00000        -0.00000         1.00233        -0.00000        -0.00000
+        -0.00000        -0.00000        -0.00000        -0.00000         1.00233        -0.00000
+        -0.00000        -0.00000        -0.00000        -0.00000        -0.00000         1.00233
+ c11             3.2631543178503928       =    522.81492618280595      GPa
+ c12             1.2789582332190292       =    204.91168641137952      GPa
+ c44             1.0023302282276223       =    160.59099669758402      GPa
+ mu             0.99209804231568177       =    158.95161988571323      GPa
+ nu             0.28157783825015598
+
+computeSaddle.exe info -  dipole tensor (eV)
+       -11.29229        -0.00000        -0.00000
+        -0.00000       -11.29229        -0.00000
+        -0.00000        -0.00000       -11.29229
+volume supercell      54795.91762 A^3
+volume change            -5.81949 A^3
+ Lib_XYZFiles::setnColumns0 info - allocating            4  columns for         3455  atoms
+ Lib_XYZFiles::setnColumns0 info - memory usage   0.118502289      Mb
+renamed 'Data/Simple_W_cases/monovac_W_12.00000.relax1.xyz.tmp' -> 'Data/Simple_W_cases/monovac_W_12.00000.relax1.xyz'
+atom      943 type    1 from       9.5181      9.5181      9.5181 to      11.1181     11.1181     11.1181
+
+ relax file 2
+ ^^^^^^^^^^^^
+
+ computeSaddle.exe info - CG relax returns after    3.7311444249469154       (eV)
+atom      943 type    1 from       9.5181      9.5181      9.5181 to      11.0566     11.0566     11.0566
+ Lib_XYZFiles::setnColumns0 info - allocating            4  columns for         3455  atoms
+ Lib_XYZFiles::setnColumns0 info - memory usage   0.118502289      Mb
+renamed 'Data/Simple_W_cases/monovac_W_12.00000.relax2.xyz.tmp' -> 'Data/Simple_W_cases/monovac_W_12.00000.relax2.xyz'
+
+ compute saddle
+ ^^^^^^^^^^^^^^
+
+simpleMD::computeSaddlePointEnergy info - atom      943( W ) at       9.5181      9.5181      9.5181 crosses saddle barrier           1.5284
+
+ replica  reaction coord          energy
+       1         0.00000         3.73111
+       2         0.16667         4.23428
+       3         0.33333         4.95041
+       4         0.50000         5.25956
+       5         0.66667         4.95199
+       6         0.83333         4.23536
+       7         1.00000         3.73162
+
+renamed 'Data/Simple_W_cases/monovac_W_12.00000.neb.xyz.tmp' -> 'Data/Simple_W_cases/monovac_W_12.00000.neb.xyz'
+
+ timing data:
+   total            1.678
+   CG               0.000
+   saddle           0.000
+   IO               0.466
+
+
+ done
+
+ 
+ 
+ 
+ 
+ 
+ 
+
+nanocrystal.exe
+^^^^^^^^^^^^^^^
+
+A simple code to generate polycrystals.
+
+Compilation:
+
+	The code is written in standard Fortran 90, with the lapack library required.
+
+	Check src/Makefile.inc is compatible for your system. gfortran is free and good enough for this code.
+
+	compile with
+
+		> cd src; make clean ; make ; cd ..
+
+	The executable should be placed in bin/
+
+
+Usage:
+
+	Test the code has compiled and get command line options with
+
+		> ./bin/nanocrystal.exe -h
+
+	Options:
+
+
+         -f <char>               output filename [ default "test" ]
+        [ -a0 <float_array> ]    lattice parameter(s)
+        [ -gf <float_array> ]    crystal type grain type fraction [ default 1.0000,0.0000,0.0000,... ]
+        [ -a <char_array> ]      atom type names [ default W,,,... ]
+        [ -Nx <int_array> ]      lattice repeats defining supercell [ default 20,20,20 ]
+        [ -M <int> ]             number of seeds [ default 5 ]
+        [ -p <char> ]            seed placement "random","fcc" [ default "random" ]
+        [ -dbg ]                 debug [ default F ]
+        [ -seed <int> ]          random seed
+        [ -short <float> ]       short range (in lattice parameters) [ default 0.5000 ]
+        [ -aniso <float_array> ] grain anisotropy matrix, either 3 diagonal elements per crystal type or col major order
+
+	
+	Generate a simple Fe crystal with
+
+		> ./bin/nanocrystal.exe -f test.Fe.xyz -a0 2.8665 -a "Fe" -Nx 32,32,32 -M 8
+
+	This will create an .xyz format file with a periodic supercell side length 32x2.8665 and M=8 grains.
+	and 8 randomly oriented and randomly positioned grains.
+
+
+	Generate a crystal with W needles oriented along the z-axis with
+		
+		> ./bin/nanocrystal.exe -f test.W.xyz -a0 3.1652 -a "W" -Nx 32,32,32 -M 8 -aniso 1,1,8
+
+	Here the anisotropic shape of the grains is indicated to be needle like 1x1x8 
+
+
+	Generate a crystal with an equal count of W and Cr grains with
+	
+		> ./bin/nanocrystal.exe -f test.WCr.xyz -a0 3.1652,2.910 -a "W","Cr" -Nx 32,32,32 -M 8 -gf 0.5,0.5
+
+	Here the "grain fraction" gf=0.5 for each type.
+	Note that an equal number of grains does not mean an equal number of atoms.
+	On average, the volume fraction will be the same, but the lattice parameter is different.
+
+
+	Generate a large crystal with a small number of disk-like large W grains and a larger number of small round Cr grains
+	
+		>  ./bin/nanocrystal.exe -f test.WCr2.xyz -a0 3.1652,2.910 -a "W","Cr" -Nx 80,80,80 -M 20 -gf 0.25,0.75 -aniso 8,8,2,0.5,0.5,0.5 
+	
+
+	
+	Unless specified otherwise, grain seeds are randomply placed. This can be changed with the -p flag.
+	-p "random" 	place seeds randomly ( default )
+	-p "fcc" 	place seeds in fcc lattice structure, generates rhombic dodecahedral grains 
+	-p "xyplane"  	place seeds for needle grains in regular hexagonal grid (good for needle grains)
+	-p "z"		place seeds in regular spacings in z axis (good for disk grains)
+
+
+
+Notes:
+
+	Have only coded bcc crystals at present. Its not too hard to put in more if anyone asks.
+
+
+nanocrystal.exe
+^^^^^^^^^^^^^^^
+
+A simple code to generate polycrystals.
+
+Compilation:
+
+	The code is written in standard Fortran 90, with the lapack library required.
+
+	Check src/Makefile.inc is compatible for your system. gfortran is free and good enough for this code.
+
+	compile with
+
+		> cd src; make clean ; make ; cd ..
+
+	The executable should be placed in bin/
+
+
+Usage:
+
+	Test the code has compiled and get command line options with
+
+		> ./bin/nanocrystal.exe -h
+
+nanocrystal.exe
+
+usage
+^^^^^
+         -f <char>               output filename [ default "test" ]
+         -a0 <float_array>     lattice parameter(s)
+        [ -c0 <float_array> ]    lattice parameter c (if needed for hcp)
+        [ -gf <float_array> ]    crystal type grain type fraction [ default 1.0000,0.0000,0.0000,... ]
+        [ -a <char_array> ]      atom type names [ default W,,,... ]
+        [ -Nx <int_array> ]      lattice repeats defining supercell [ default 20,20,20 ]
+        [ -M <int> ]             number of seeds [ default 5 ]
+        [ -p <char> ]            seed placement "random","fcc","xyplane","z" [ default "random" ]
+        [ -dbg ]                 debug [ default F ]
+        [ -seed <int> ]          random seed
+        [ -short <float> ]       short range (in lattice parameters) [ default 0.5000 ]
+        [ -aniso <float_array> ] grain anisotropy matrix, either 3 diagonal elements per crystal type or col major order
+        [ -latt <char_array> ]    lattice type (bcc/fcc/hcp) [ default bcc,bcc,bcc,... ]
+
+
+
+	
+	Generate a simple Fe crystal with
+
+		> ./bin/nanocrystal.exe -f test.Fe.xyz -a0 2.8665 -a "Fe" -Nx 32,32,32 -M 8
+
+	This will create an .xyz format file with a periodic supercell side length 32x2.8665 and M=8 grains.
+	and 8 randomly oriented and randomly positioned grains.
+
+
+	Generate a crystal with W needles oriented along the z-axis with
+		
+		> ./bin/nanocrystal.exe -f test.W.xyz -a0 3.1652 -a "W" -Nx 32,32,32 -M 8 -aniso 1,1,8
+
+	Here the anisotropic shape of the grains is indicated to be needle like 1x1x8 
+
+
+	Generate a crystal with an equal count of W and Cr grains with
+	
+		> ./bin/nanocrystal.exe -f test.WCr.xyz -a0 3.1652,2.910 -a "W","Cr" -Nx 32,32,32 -M 8 -gf 0.5,0.5
+
+	Here the "grain fraction" gf=0.5 for each type.
+	Note that an equal number of grains does not mean an equal number of atoms.
+	On average, the volume fraction will be the same, but the lattice parameter is different.
+
+
+	Generate a large crystal with a small number of disk-like large W grains and a larger number of small round Cr grains
+	
+		>  ./bin/nanocrystal.exe -f test.WCr2.xyz -a0 3.1652,2.910 -a "W","Cr" -Nx 80,80,80 -M 20 -gf 0.25,0.75 -aniso 8,8,2,0.5,0.5,0.5 
+	
+	Generate a large iron polycrystal, with scattered small Cu grains
+	
+	    > ./bin/nanocrystal.exe -f test.FeCu.xyz -a0 2.8665,3.612 -a "Fe","Cu" -Nx 80,80,80 -M 20 -gf 0.8,0.2  -latt "bcc","fcc" -aniso 2,2,2,1,1,1
+
+	
+	Unless specified otherwise, grain seeds are randomply placed. This can be changed with the -p flag.
+	-p "random" 	place seeds randomly ( default )
+	-p "fcc" 	place seeds in fcc lattice structure, generates rhombic dodecahedral grains 
+	-p "xyplane"  	place seeds for needle grains in regular hexagonal grid (good for needle grains)
+	-p "z"		place seeds in regular spacings in z axis (good for disk grains)
+
+
+ 
+ 
+
+
+
+###############
+#
+#   updates July 23
+#
+###############
+
+
+1)  TEM imaging now separated from findVoids
+        findVoids       finds the voids
+        d2bi            simulated TEM
+        
+        
+        
+2)  d2bi command line args same as old findVoids _except_
+        -D2BI_command   now becomes -command
+        -usePhase       is obsolete - now activated only by input of .psi.xyz or .psi.bin file using -Psi <filename>
+
+
+3)  minor tweaks
+        d2bi now wraps atom positions to first periodic replica cell before calculation. 
+            Shouldn't see much difference with lammps, parcas files now work without -sg or -ng set.
+            
+        d2bi accepts new command line args to generate output
+            -png                        generate a quick .png file
+            -png_min    isomin          minimum intensity level
+            -png_max    isomax          maximum intensity level - set -png_min 0 -png_max 0 to normalise output range
+            -png_blur   blur            blur range in A
+                
+            -o ""                       do not generate any output files            
+            
+         have changed tilt default range from +/-10 deg to +/-5 deg
+            
+
+4)  MPI
+
+        mkdir build
+        cd build
+        cmake ../  
+        
+    then compile serial...
+        make              
+    ... or compile parallel              
+        make -j 6                       
+        
+
+5)  new surface creation options
+        -xpad  -ypad  -zpad
+        on input of the .xyz file, extend the supercell periodic repeat vector in the x,y or z direction by 50% and centre the atoms
+        This creates a cheap, unrelaxed surface in the specified direction.
+        Note that to generate a surface in (eg) the x-y plane is more complicated, as you need to take periodic replicas into account.
+        
+        -d 
+        Set to 0 to use extent of supercell ( default if padding is used )
+        Do not set to use extent of atom positions
+        Set to a positive value to user-define the voxel extent ( eg extend a little beyond 1st periodic replica in x-y- direction )
+    
+6)  4 miller indices
+        
+7)  Tomography options
+        -tomoAngle                  rotate between +/- tomoAngle (degrees) about vector g x k
+        -nTomoAngle                 number of steps
+        
+8)  Precession options
+        -precAngle                  beam tilt by a small angle (radians) 
+        -nPrecAngle                 number of precession snapshots to average over        
+
+
+9)  Multiple diffraction conditions
+        As the file load is the most expensive part of an MPI calc, can now run multiple diffraction conditions.
+        Use 3 x N g-vectors in the command line parameters ( or 4 x for HCP ), eg
+        -g 2,0,0,-2,0,0,1,1,0,1,-1,0
+        or N (sg,ng,dark) parameters eg
+        -ng 4,1,4,1 -dark T,F,T,F
+        
+        can accept either all entries having the same array length N, or some entries having length 1, eg
+        -g 2,0,0,-2,0,0 -ng 4 -k 0,0,1 -dark 
+        
+        
+        
+# examples
+
+Run an hcp system with the c-axis oriented along the x-direction in the input file. 
+
+
+mpirun -n 64 d2bi -f ${file} \
+    -a0 3.234,3.234,5.1677 -lattice hcp -dp ${file}.diff.dat    \
+    -g 1,0,-1,0 -k 0,0,0,1 -ng 4 -dark -xifile extinctionDistances.Zr_V200_T300.dat 
+    
+
+
+The diffraction pattern file (-dp) is produced by grainProperties ( or otherwise ) with the format
+
+number_of_grains
+grain_index     F_11 F_21 F_31 F_12 F_22 F_32 F_13 F_23 F_33
+grain_index     F_11 F_21 F_31 F_12 F_22 F_32 F_13 F_23 F_33
+grain_index     F_11 F_21 F_31 F_12 F_22 F_32 F_13 F_23 F_33
+…
+
+where F_ij is the ijth component of the deformation gradient F = R( 1 + eps )
+
+eg for this hcp file, there is only one grain, and the deformation is just a rotation:
+>   more ${file}.diff.dat
+1
+1 0.0 1.0 0.0 0.0 0.0 1.0 1.0 0.0 0.0
+
+
+
+
+
+Run tomography on the same file. Add padding to the x- direction = c- zone axis.
+
+mpirun -n 64 d2bi -f ${file} \
+    -a0 3.234,3.234,5.1677 -lattice hcp -dp ${file}.diff.dat    \
+    -g 1,0,-1,0 -k 0,0,0,1 -ng 1 -nodark -xifile extinctionDistances.Zr_V200_T300.dat   \
+    -nTomoAngle 20  -xpad -d 1750,1750,0
+    
+    
+    
+
+Run precession and multiple g-vectors
+
+mpirun -n 64 d2bi -f ${file} \
+    -a0 3.1652 -lattice bcc \                
+    -g 2,0,0,2,0,0,1,0,1,1,0,1 -k 0,1,0 -ng 1,4,1,4 -dark F,T,F,T -xifile extinctionDistances.W_V200_T300.dat \
+    -d 1000,1000 -nPrecAngle 10
+
