@@ -1,8 +1,9 @@
 
-program run_d2bi
+        program run_d2bi
     !---^^^^^^^^^^^^^^^^
     !*      a code for simulated TEM in the dynamical two beam imaging approximation
-    !*      Daniel Mason, UKAEA, Feb 2021
+    !*      Daniel Mason, 
+    !*      (c) UKAEA, Feb 2021-April 2024
     !*
      
     
@@ -12,8 +13,7 @@ program run_d2bi
     
             use Lib_CommandLineArguments
             use Lib_XYZFiles
-            use Lib_Filenames
-             
+            use Lib_Filenames             
             use Lib_SimpleProgressBar
             use Lib_Callipers
             use Lib_SimpleSupercells
@@ -44,66 +44,98 @@ program run_d2bi
             
             type(CommandLineArguments)      ::      cla
     
+        !---    input/output
             character(len=256)              ::      filename = ""
             character(len=256)              ::      outfile0 = ""
-            real(kind=real64)               ::      a0 = 3.0d0
+            real(kind=real64),dimension(3)  ::      a0in = LIB_CLA_NODEFAULT_R            
             character(len=8)                ::      latticeName = "bcc"
-            real(kind=real64),dimension(3)  ::      a0in = LIB_CLA_NODEFAULT_R
-            real(kind=real64),dimension(3)  ::      addOffset = LIB_CLA_NODEFAULT_R
-            !logical                         ::      findXYZOffset = .false.
-            !logical                         ::      removeOffset = .true.
+            character(len=256)              ::      orientationFile = ""
+
+        !---    imaging conditions
+            integer,parameter               ::      NDIFFMAX = 100
+            integer                         ::      nDiffConditions = 1
+            real(kind=real64),dimension(4,NDIFFMAX) ::  k4array = 0
+            real(kind=real64),dimension(4,NDIFFMAX) ::  g4array = 0
+            real(kind=real64),dimension(NDIFFMAX)   ::  ngarray = LIB_CLA_NODEFAULT_R
+            real(kind=real64),dimension(NDIFFMAX)   ::  Sgarray = LIB_CLA_NODEFAULT_R
+            logical,dimension(NDIFFMAX)             ::  darkarray = .true.
+
+        !---    cell manipulation
             logical                         ::      xpad = .false.
             logical                         ::      ypad = .false.
             logical                         ::      zpad = .false.
-            real(kind=real64),dimension(3)  ::      d0 = LIB_CLA_NODEFAULT_R
             logical                         ::      surf = .false.
-            
-            
-            character(len=256)              ::      orientationFile = ""
-            !character(len=256)              ::      defGradFile = ""
-    
-            real(kind=real64)               ::      V = 200.0d0                     !   electron voltage in keV
-            real(kind=real64)               ::      xi0 = 103.889565d0              !   extinction distance in perfect crystal ( set to bcc W )
-            real(kind=real64)               ::      xig = 207.533203d0              !   extinction distance in perfect crystal ( set to bcc W g = [110] )
-            real(kind=real64),dimension(3)  ::      g3 = (/1,1,0/)
-            real(kind=real64),dimension(3)  ::      k3 = (/0,0,1/)
-            character(len=256)              ::      extinction_distances_filename = ""
-            !real(kind=real64),dimension(3)  ::      z = LIB_CLA_NODEFAULT_R
-            
+            real(kind=real64),dimension(3)  ::      d0 = LIB_CLA_NODEFAULT_R
+            real(kind=real64),dimension(3)  ::      addOffset = LIB_CLA_NODEFAULT_R
             real(kind=real64),dimension(3,3)::      U = LIB_CLA_NODEFAULT_R
             real(kind=real64),dimension(3,3)::      R = LIB_CLA_NODEFAULT_R
+            logical                         ::      opxyz = .false.
+            real(kind=real64)               ::      a0 = 3.0d0                      !   an indicative unit cell length.
+
+        !---    .png image output
+            logical                         ::      opPng = .true.
+            real(kind=real64)               ::      png_min = 0.0d0,png_max = 0.0d0
+            real(kind=real64)               ::      png_blur = 2.50d0
+
+        !---    calculation
+            character(len=256)              ::      extinction_distances_filename = ""
+            real(kind=real64)               ::      xi0 = 103.889565d0              !   extinction distance in perfect crystal ( set to bcc W )
+            real(kind=real64)               ::      xig = 207.533203d0              !   extinction distance in perfect crystal ( set to bcc W g = [110] )
+            logical                         ::      useDensity = .false.
+            logical                         ::      alterg = .false.
+            integer,dimension(2)            ::      M = (/4,4/)
+
+        !---    microscope properties
+            real(kind=real64)               ::      V = 200.0d0                     !   electron voltage in keV
+            integer                         ::      nPrecAngle = 1
+            real(kind=real64)               ::      precAngle = 0.005d0             !   5 mrad
+            integer                         ::      nAperture = 1                   !   (deprecated - checking sensitivity)
+            real(kind=real64)               ::      apertureAngle = 0.0001d0        !   0.1 mrad
+            integer                         ::      nTomoAngle = 1
+            real(kind=real64)               ::      tomoAngle = 20.0d0        !   degrees
+    
+ 
+
+            
+            
+        !---   important class instances
+            type(XYZFile)                       ::      xyz         !   input file
+            type(SimpleSupercell)               ::      super       !   voxel spacing periodicity etc
+            type(Lattice)                       ::      latt        !   expected lattice
+            type(DynamicalTwoBeamImaging)       ::      d2bi        !   calculation
+            
+        !---    information about the input file 
+            real(kind=real64),dimension(3)      ::      offset 
+            integer                             ::      nAtoms
+            real(kind=real64),dimension(:,:),pointer            ::  x                   !   (3,nAtoms) , atom positions
+            integer,dimension(:),allocatable    ::      nGrain                          !   (1:number_of_grains), count of atoms in each grain
+
+        !---    information about the imaging space
+            integer                             ::      Mx,My,Mz                        !   size of phase field
+            real(kind=real64),dimension(:,:),allocatable    ::  d2bimg                  !   intensity map (0:Mx-1,0:My-1) 
+            real(kind=real64)                   ::      aperpx                          !   dot pitch ( angstroms per pixel )
+             
+        !---    variables for a diffraction condition
+            real(kind=real64),dimension(3)  ::      g3 = (/1,1,0/)
+            real(kind=real64),dimension(3)  ::      k3 = (/0,0,1/)
             real(kind=real64)               ::      Sg = LIB_CLA_NODEFAULT_R        
             real(kind=real64)               ::      ng = LIB_CLA_NODEFAULT_R
             logical                         ::      dark = .true.
+            logical                         ::      miller4 = .false.               !   are we expecting miller-bravais?            
+            real(kind=real64),dimension(4)  ::      g4 
+            real(kind=real64),dimension(4)  ::      k4 
+        
             
-            real(kind=real64)               ::      tomoAngle = 20.0d0        !   degrees
-            integer                         ::      ntomoAngle = 1
-            
-            integer                         ::      nPrecAngle = 1
-            real(kind=real64)               ::      precAngle = 0.005d0       !   5 mrad
-            
-            
-            integer                         ::      nAperture = 1
-            real(kind=real64)               ::      apertureAngle = 0.0001d0   !   0.1 mrad
-            
-            integer                         ::      nDiffConditions = 1
-            integer,parameter               ::      NDIFFMAX = 100
-            real(kind=real64),dimension(4,NDIFFMAX) ::  k4array = 0 ,g4array = 0
-            real(kind=real64),dimension(NDIFFMAX)             ::  ngarray = LIB_CLA_NODEFAULT_R
-            real(kind=real64),dimension(NDIFFMAX)   ::  Sgarray = LIB_CLA_NODEFAULT_R
-            logical,dimension(NDIFFMAX)             ::  darkarray = .true.
-             
-            logical                         ::      useDensity = .false.
-            integer,dimension(2)            ::      M = (/4,4/)
-            logical                         ::      opxyz = .false.
-            logical                         ::      alterg = .false.
-            
-            
-            logical                         ::      opPng = .true.
-            real(kind=real64)               ::      png_min = 0.0d0,png_max = 0.0d0,png_blur = 2.50d0
-            
-            
-            
+    
+    
+        !---    information about the super cell
+            real(kind=real64),dimension(3,3)    ::      a_super,a_cell,a_vox , dfg  !   ,ia_cell 
+            logical                             ::      unitDefGrad = .false.
+    
+
+        !---    mpi            
+            integer                             ::      nProcs,rank,ierror
+                
     
         !---    timing data
     
@@ -117,26 +149,6 @@ program run_d2bi
             type(Callipers),dimension(T_TOTAL)    ::      tt
     
     
-        !---   important class instances
-            type(XYZFile)                       ::      xyz
-            type(SimpleSupercell)               ::      super       !   voxel spacing periodicity etc
-            type(Lattice)                       ::      latt        !   expected lattice
-            type(DynamicalTwoBeamImaging)       ::      d2bi
-            
-    
-        !---    information about the super cell
-            real(kind=real64),dimension(3,3)    ::      a_super,a_cell,a_vox , dfg  !   ,ia_cell 
-            real(kind=real64),dimension(:,:),pointer            ::  x               !   (3,nAtoms) , atom positions
-            real(kind=real64),dimension(3)      ::      offset 
-            integer                             ::      Mx,My,Mz                     !   size of phase field
-            integer                             ::      nAtoms
-            logical                             ::      unitDefGrad = .false.
-            logical                             ::      miller4 = .false.
-    
-        !---    dynamical 2 beam imaging
-            real(kind=real64),dimension(:,:),allocatable    ::  d2bimg                  !   intensity map (0:w-1,0:h-1) , w,h is size of ouput image, usually order Mx,My
-    
-    
         !---    dummies
             logical                             ::      ok
             real(kind=real64),dimension(12)     ::      dat
@@ -148,22 +160,16 @@ program run_d2bi
             character(len=40)                   ::      bbbb
             character(len=8)                    ::      cccc
             real(kind=real64),dimension(3)      ::      xmin,xmax,yy,d
-            real(kind=real64)                   ::      aperpx,modg,weight,pad , lenaxis1,lenaxis2
+            real(kind=real64)                   ::      modg,weight,pad , lenaxis1,lenaxis2
             character(len=256)                  ::      dummy
             integer,dimension(3,2)              ::      idat
             real(kind=real64),dimension(3,3)    ::      eps_bar,dfg_bar,rot_bar , U0,R0
             real(kind=real64)                   ::      theta
             
-            integer,dimension(:),allocatable    ::      nGrain
-            !logical                             ::      xyzHasDistance = .false.
-            real(kind=real64),dimension(4)      ::      g4 
-            real(kind=real64),dimension(4)      ::      k4 
             
             
             
             
-            
-            integer                             ::      nProcs,rank,ierror
             
             
             
@@ -372,7 +378,7 @@ program run_d2bi
             ! call get( cla,"nAperture ",nAperture ,LIB_CLA_OPTIONAL,"    number of points for aperture (try 1,8,17)",6  )
             ! call get( cla,"apertureAngle",apertureAngle,LIB_CLA_OPTIONAL,"angle (radians) for aperture",6  )
            
-            call get( cla,"nTomoAngle",ntomoAngle,LIB_CLA_OPTIONAL,"   tomography tilt steps",6 )
+            call get( cla,"nTomoAngle",nTomoAngle,LIB_CLA_OPTIONAL,"   tomography tilt steps",6 )
             call get( cla,"tomoAngle",tomoAngle,LIB_CLA_OPTIONAL,"    tomography tilt half angle (deg)",6 )
              
     
@@ -529,14 +535,14 @@ program run_d2bi
             end if      
             
             
-            if ((ntomoAngle > 1).and. .not. (xpad .or. ypad .or. zpad) ) then
-                if (rank==0) write(*,fmt='(a)') "d2bi warning - options '-ntomoAngle' and '-noxpad -noypad -nozpad'" 
+            if ((nTomoAngle > 1).and. .not. (xpad .or. ypad .or. zpad) ) then
+                if (rank==0) write(*,fmt='(a)') "d2bi warning - options '-nTomoAngle' and '-noxpad -noypad -nozpad'" 
                 if (rank==0) write(*,fmt='(a)') "   Need an explicit surface calculation to do tomography sensibly. Assuming that the input file has buffer space in direction parallel to k-vector"
             end if        
             
             
-            if ((ntomoAngle > 1).and. .not. surf) then
-                if (rank==0) write(*,fmt='(a)') "d2bi warning - conflicting options '-ntomoAngle' and '-nosurf'" 
+            if ((nTomoAngle > 1).and. .not. surf) then
+                if (rank==0) write(*,fmt='(a)') "d2bi warning - conflicting options '-nTomoAngle' and '-nosurf'" 
                 if (rank==0) write(*,fmt='(a)') "   Need an explicit surface calculation to do tomography sensibly. Setting -surf"
                 surf = .true.
             end if        
@@ -751,9 +757,9 @@ program run_d2bi
                 else
                     write (*,fmt='(a,f10.5,a)') "     tilt stage max angle ",THETA_MAX," (deg)"
                 end if
-                if (ntomoAngle>1) then
+                if (nTomoAngle>1) then
                     write (*,fmt='(a,f10.5,a)') "     tomography max angle ",tomoAngle," (deg)"
-                    print *,"    tomography steps     ",ntomoAngle
+                    print *,"    tomography steps     ",nTomoAngle
                 else
                     print *,"    single orientation (no tomography)     "
                 end if
@@ -1003,63 +1009,7 @@ program run_d2bi
             tt(T_DEFGRAD) = Callipers_ctor()
             if (alterg) then
                     
-    
-                ! if ( len_trim(defGradFile) /= 0 ) then
-                
-                !     !   read spatially varying deformation gradient field from disk. Rank 0 reads then broadcasts
-                !     if (rank==0) then
-                !         print *,""
-                !         print *,"reading def grad field"
-                !         print *,"^^^^^^^^^^^^^^^^^^^^^^"
-                !         print *,""
-                !         print *,"filename """//trim(defGradFile)//""" (binary file)"
-                   
-                         
-                !         call computeAvgDefGrad(eps_bar,dfg_bar,weight)
-             
-                !         open(unit=808,file=trim(defGradFile),action="read",form="unformatted")
-                !         !---    old line 22/05/23            
-                !         !   read(unit=808) ii
-                !         !   if (ii /= Mx*My*Mz) then
-                !         !       new line
-                !             read(unit=808) dummy(1:10)
-                !             xyzHasDistance = (dummy(9:10) == "+d")
-                !             read(unit=808) ix,iy,iz
-                !             if ( .not. ( (ix==Mx).and.(iy==My).and.(iz==Mz) ) ) then                    
-                !                 if (rank==0) print *,"d2bi warning - phase field allocated has ",Mx,",",My,",",Mz," nodes, phase field in file has ",ix,",",iy,",",iz," nodes"                        
-                !             end if    
-                            
-                !             if (xyzHasDistance) then
-                !                 if (rank==0) print *,"reading column for distance"                        
-                !                 do iz = 0,Mz-1
-                !                     do iy = 0,My-1
-                !                         do ix = 0,Mx-1
-                !                             call progressBar( ix + 1+ Mx*(iy + My*iz)+1,Mx*My*Mz )
-                !                             read (unit=808) dat(1:9),dp 
-                !                             call computeAvgDefGrad( dat(1:9),1.0d0, eps_bar,dfg_bar,weight)
-                !                         end do
-                !                     end do
-                !                 end do
-                !             else
-                !                 do iz = 0,Mz-1
-                !                     do iy = 0,My-1
-                !                         do ix = 0,Mx-1
-                !                             call progressBar( ix + 1+ Mx*(iy + My*iz)+1,Mx*My*Mz )
-                !                             read (unit=808) dat(1:9)
-                !                             call computeAvgDefGrad( dat(1:9),1.0d0, eps_bar,dfg_bar,weight)
-                !                         end do
-                !                     end do
-                !                 end do
-                !             end if
-                !         close(unit=808)
-                !         call computeAvgDefGrad(eps_bar,dfg_bar,weight , dfg) ; dfg_bar = dfg
-                !         print *,"d2bi info - average deformation gradient, strain, rot read from binary file "
-                        
-                     
-                !      end if
-                      
-                     
-                !else if (len_trim(orientationFile)/=0) then
+     
                 if (len_trim(orientationFile)/=0) then
                 
                     !   read average orientation from disk
@@ -1399,23 +1349,23 @@ program run_d2bi
                 call pause(tt(T_D2BI))
                 
                 
-                do nn = 0,ntomoAngle-1
+                do nn = 0,nTomoAngle-1
                 
                  
                     
-                    if (ntomoAngle == 1) then           
+                    if (nTomoAngle == 1) then           
                                                
                         if (opxyz) call opXyzFile( d2bi, x, opxyzfilename = trim(outfile)//".xyz")
                     
                     else
                     
                     !---    construct the rotation matrix for this tomography step.
-                        !theta = -tomoAngle + 2*tomoAngle*nn/(ntomoAngle-1)
+                        !theta = -tomoAngle + 2*tomoAngle*nn/(nTomoAngle-1)
                         
-                        theta = tomoAngle - 2*tomoAngle*nn/(ntomoAngle-1)
+                        theta = tomoAngle - 2*tomoAngle*nn/(nTomoAngle-1)
                         if (rank==0) then
                             print *,""
-                            print *,"d2bi info - tomography step ",(nn+1),"/",ntomoAngle," theta = ",theta," deg"
+                            print *,"d2bi info - tomography step ",(nn+1),"/",nTomoAngle," theta = ",theta," deg"
                         end if
                         theta = theta * 3.141592654d0 / 180.0d0
                         R = reshape( (/ 1.0d0,0.0d0,0.0d0 , 0.0d0,cos(theta),sin(theta) , 0.0d0,-sin(theta),cos(theta) /),(/ 3,3 /) )
@@ -1467,7 +1417,7 @@ program run_d2bi
                             call start(tt(T_OUTPUT))
                             
                             print *,""
-                            if (ntomoAngle == 1) then
+                            if (nTomoAngle == 1) then
                                 dummy = trim(outfile) 
                             else
                                 dummy = numberFile( trim(outfile),nn,"" )
