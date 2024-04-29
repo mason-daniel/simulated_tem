@@ -16,7 +16,7 @@
         use Lib_ComplexSupercells
         use Lib_DiffractionConditions
         use Lib_Quaternions
-        use Lib_DataDoubler
+        !use Lib_DataDoubler
         !use Lib_Voxelise   
         use Lib_XYZFiles                    !   because findGdotRphaseField has the option to dump atom positions tilted to diffraction conditions
         use Lib_FactoriseParallel
@@ -39,7 +39,7 @@
         public      ::      setExtinctionDistances
         public      ::      setConventionalUnitCell
         public      ::      setVoxelSupercellSize
-        public      ::      setUsePhaseField
+        public      ::      setUseDensityField
         public      ::      findImageParameters
         public      ::      computeD2BI_img
         public      ::      setSupercellTilt
@@ -76,8 +76,7 @@
             integer                                     ::      mxy,mzz         !   number of subdivisions to take per unit cell axis
             real(kind=real64)                           ::      xi0,xig         !   extinction parameters 
             real(kind=real64)                           ::      E               !   electron accelerating voltage (keV)
-            logical                                     ::      usePhaseField   !   should we use void calc?
-            real(kind=real64)                           ::      isolevel,voidlevel
+            logical                                     ::      useDensityField   !   should we use void calc?
             type(SimpleSupercell)                       ::      gksuper         !   supercell oriented with electron beam parameters
             real(kind=real64),dimension(3)              ::      delta           !   offset required by tilting of k vector to accommodate sg       
             real(kind=real64)                           ::      foilThickness   !   desired foil thickness
@@ -117,10 +116,10 @@
             module procedure    setVoxelSupercellSize2
         end interface
         
-        interface   setUsePhaseField
-!            module procedure    setUsePhaseField0
-!             module procedure    setUsePhaseField1
-             module procedure    setUsePhaseField2
+        interface   setUseDensityField
+!            module procedure    setUseDensityField0
+!             module procedure    setUseDensityField1
+             module procedure    setUseDensityField2
         end interface        
         
     contains
@@ -137,7 +136,7 @@
             call setIntegrationPoints( this,0,0 )
             call setMicroscopeParameters( this,(/0.0d0,0.0d0,1.0d0/),(/1.0d0,1.0d0,0.0d0/),150.0d0 )
             call setExtinctionDistances( this, 103.9d0,207.5d0 )
-            call setUsePhaseField(this , .true.)
+            call setUseDensityField(this , .true.)
             !this%gg = (/ sqrt(0.5d0),sqrt(0.5d0),0.0d0 /)
             !this%kk = (/ 0,0,1 /)
             this%voxelSupercellDimensions(1:3) = 0.0d0     !    this is code for set it from input supercell
@@ -191,7 +190,7 @@
     !       note: do not deallocate  or latt, the memory for this is stored elsewhere, I just have a copy of the pointers.
             type(DynamicalTwoBeamImaging),intent(inout)    ::      this
             if (this%mxy == 0) return
-!            if (this%usePhaseField) deallocate(this%rho)
+!            if (this%useDensityField) deallocate(this%rho)
             this = DynamicalTwoBeamImaging_null()
             return
         end subroutine delete0
@@ -1125,13 +1124,13 @@
         
     !---
     
-        subroutine setUsePhaseField2( this,is )
+        subroutine setUseDensityField2( this,is )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             type(DynamicalTwoBeamImaging),intent(inout)     ::      this            
             logical,intent(in)                              ::      is
-            this%usePhaseField = is
+            this%useDensityField = is
             return
-        end subroutine setUsePhaseField2
+        end subroutine setUseDensityField2
         
 !     
 
@@ -1775,11 +1774,12 @@
                 nullify(gdotr) 
                 nullify(gdotr_aperture)            
                 allocate(gdotr_aperture( ceiling(nAtoms*1.5/nProcs),nApp ))            
-                allocate(sumigr_aperture(nApp) )                
+                               
             else
                 nullify(gdotr)            
                 allocate(gdotr( ceiling(nAtoms*1.5/nProcs) ))                
-            end if            
+            end if     
+            allocate(sumigr_aperture(nApp))
             
             ! if (rank==0) then
             !     print *,"Lib_DynamicalTwoBeamImaging::computeD2BI_img() info - link cell list for each processor"
@@ -1882,7 +1882,7 @@
                                         r2_min = min( r2_min,r2(kk) )               !   shortest scaled range to an atom                  
                                         sumigr = sumigr + exp( cmplx( -r2(kk)*i2s2 , gdotr(id(kk)) , kind=real64 ) )         
                                     end do
-                                    if (this%usePhaseField) rho( iz ) = convertScaledRangeToRho( r2_min,sigma )  
+                                    if (this%useDensityField) rho( iz ) = convertScaledRangeToRho( r2_min,sigma )  
                                     ww = abs( sumigr )
                                     ww = 1/max( 1.0d-16,ww )
                                     expigdoty( iz,app ) = sumigr*ww     
@@ -1912,7 +1912,7 @@
                                             sumigr_aperture(app) = sumigr_aperture(app) + exp( cmplx( -r2(kk)*i2s2 , gdotr_aperture(id(kk),app) , kind=real64 ) )         
                                         end do
                                     end do
-                                    if (this%usePhaseField) rho( iz ) = convertScaledRangeToRho( r2_min,sigma )  
+                                    if (this%useDensityField) rho( iz ) = convertScaledRangeToRho( r2_min,sigma )  
                                     do app = 1,nApp
                                         ww = abs( sumigr_aperture(app) )
                                         ww = 1/max( 1.0d-16,ww )
@@ -1996,30 +1996,7 @@
         end subroutine computeD2BI_img
                                                                      
     
-     
-
-!         elemental function rhoFromPsi( psi,isolevel,voidlevel) result( rho )
-!     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-!     !*      returns 1 at isolevel and 0 at void level with a smooth variation.
-!             real(kind=real32),intent(in)        ::      psi
-!             real(kind=real64),intent(in)        ::      isolevel,voidlevel
-!             real(kind=real64)                   ::      rho
-!             
-!             real(kind=real64)           ::      xx
-!             
-!             if (psi>=voidlevel) then
-!                 rho = 0.0d0
-!             else if (psi<=isolevel) then
-!                 rho = 1.0d0
-!             else
-!                 xx = (psi - isolevel)/(voidlevel - isolevel)                !   0 at isolevel and 1 at voidlevel
-!                 rho = 1 - xx*xx*xx*( 10 - 15*xx + 6*xx*xx )                 !   1 at isolevel and 0 at voidlevel smooth variation.
-!                 !xx = xx*xx
-!                 !xx = 15 - xx*(10 + 3*xx)
-!                 !rho = (8 - rho*xx)/16
-!             end if
-!             return
-!         end function rhoFromPsi
+      
                
 !      
     

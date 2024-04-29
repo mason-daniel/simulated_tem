@@ -50,8 +50,8 @@ program run_d2bi
             character(len=8)                ::      latticeName = "bcc"
             real(kind=real64),dimension(3)  ::      a0in = LIB_CLA_NODEFAULT_R
             real(kind=real64),dimension(3)  ::      addOffset = LIB_CLA_NODEFAULT_R
-            logical                         ::      findXYZOffset = .false.
-            logical                         ::      removeOffset = .true.
+            !logical                         ::      findXYZOffset = .false.
+            !logical                         ::      removeOffset = .true.
             logical                         ::      xpad = .false.
             logical                         ::      ypad = .false.
             logical                         ::      zpad = .false.
@@ -60,7 +60,7 @@ program run_d2bi
             
             
             character(len=256)              ::      orientationFile = ""
-            character(len=256)              ::      defGradFile = ""
+            !character(len=256)              ::      defGradFile = ""
     
             real(kind=real64)               ::      V = 200.0d0                     !   electron voltage in keV
             real(kind=real64)               ::      xi0 = 103.889565d0              !   extinction distance in perfect crystal ( set to bcc W )
@@ -93,9 +93,8 @@ program run_d2bi
             real(kind=real64),dimension(NDIFFMAX)   ::  Sgarray = LIB_CLA_NODEFAULT_R
             logical,dimension(NDIFFMAX)             ::  darkarray = .true.
              
-            logical                         ::      usePhase = .false.
+            logical                         ::      useDensity = .false.
             integer,dimension(2)            ::      M = (/4,4/)
-            logical                         ::      test = .false.
             logical                         ::      opxyz = .false.
             logical                         ::      alterg = .false.
             
@@ -144,19 +143,19 @@ program run_d2bi
             real(kind=real64),dimension(4*NDIFFMAX)     ::      darray
             character(len=256)                  ::      outfile
             integer                             ::      nDiff
-            integer                             ::      ix,iy,iz,ii,kk,ll , nn
+            integer                             ::      ix,ii,kk,ll , nn
             character(len=5)                    ::      aaaa
             character(len=40)                   ::      bbbb
             character(len=8)                    ::      cccc
             real(kind=real64),dimension(3)      ::      xmin,xmax,yy,d
-            real(kind=real64)                   ::      aperpx,modg,weight,dp,pad , lenaxis1,lenaxis2
+            real(kind=real64)                   ::      aperpx,modg,weight,pad , lenaxis1,lenaxis2
             character(len=256)                  ::      dummy
             integer,dimension(3,2)              ::      idat
             real(kind=real64),dimension(3,3)    ::      eps_bar,dfg_bar,rot_bar , U0,R0
             real(kind=real64)                   ::      theta
             
             integer,dimension(:),allocatable    ::      nGrain
-            logical                             ::      xyzHasDistance = .false.
+            !logical                             ::      xyzHasDistance = .false.
             real(kind=real64),dimension(4)      ::      g4 
             real(kind=real64),dimension(4)      ::      k4 
             
@@ -197,7 +196,7 @@ program run_d2bi
     
             ii = 0
             call get( cla,"a0",a0in,ii ,LIB_CLA_REQUIRED,"            unit cell dimension (A)",1 )
-            call get( cla,"lattice",latticeName ,LIB_CLA_OPTIONAL,"     lattice type (bcc/fcc)",1 )
+            call get( cla,"lattice",latticeName ,LIB_CLA_OPTIONAL,"     lattice type",1 )
             if (getLatticeType(latticeName) == LATTICE_HCP) then
                 a0 = a0in(1)
                 if (ii==1) then
@@ -216,7 +215,7 @@ program run_d2bi
             outfile0 = filename
             call get( cla,"o",outfile0 ,LIB_CLA_OPTIONAL,"           output filename",1)
     
-            call get( cla,"DG",defGradFile,LIB_CLA_OPTIONAL,"          location of def grad field file ",1)
+           ! call get( cla,"DG",defGradFile,LIB_CLA_OPTIONAL,"          location of def grad field file ",1)
              
             call get( cla,"dp",orientationFile,LIB_CLA_OPTIONAL,"          location of diffraction pattern file ",1)
             call get( cla,"png",opPng,LIB_CLA_OPTIONAL,"         output .png file ",4)
@@ -234,10 +233,8 @@ program run_d2bi
            call get( cla,"xi0",xi0,LIB_CLA_OPTIONAL,"          xi_0 (A)",5 )
            call get( cla,"xig",xig,LIB_CLA_OPTIONAL,"          xi_g (A)",5 )
     
-           call get( cla,"theta",THETA_MAX,LIB_CLA_OPTIONAL,"        maximum tilt search angle (rad) ",2 )
-           if (hasArgument(cla,"theta")) THETA_MAX = THETA_MAX*PI/180.0d0
            
-            ii=0 ; call get( cla,"g",darray,ii,LIB_CLA_OPTIONAL,"            g-vector (reduced recip space direction [hkl] or [hkil])" ,2)
+            ii=0 ; darray=LIB_CLA_NODEFAULT_R ; call get( cla,"g",darray,ii,LIB_CLA_REQUIRED,"              g-vector (reduced recip space direction [hkl] or [hkil])" ,2)
             if (getLatticeType(latticeName) == LATTICE_HCP) then
                 !   expect 4 miller-bravais indices
                 if (mod(ii,4) == 0) then
@@ -261,7 +258,7 @@ program run_d2bi
             end if   
     !         end if
     
-            ii=0 ; call get( cla,"k",darray,ii,LIB_CLA_OPTIONAL,"            zone axis (cell space direction, [uvw] or [uvtw])",2 )
+            ii=0 ; darray=LIB_CLA_NODEFAULT_R ; call get( cla,"k",darray,ii,LIB_CLA_REQUIRED,"              zone axis (cell space direction, [uvw] or [uvtw])",2 )
             if (getLatticeType(latticeName) == LATTICE_HCP) then
                 !   expect 4 miller-bravais indices
                 miller4 = .true.
@@ -336,7 +333,7 @@ program run_d2bi
             end if    
         
             
-            ii=0 ; call get( cla,"ng",ngarray,ii,LIB_CLA_OPTIONAL,"           value for deviation parameter (g,ng)",2  )
+            ii=0 ; call get( cla,"ng",ngarray,ii,LIB_CLA_OPTIONAL,"           value for deviation parameter defined by (g,ng)",2  )
             if ( ii==1 )  then
                 ngarray(1:nDiffConditions) = ngarray(1)   
             else if ( (nDiffConditions==1).and.(ii>1) ) then
@@ -350,7 +347,7 @@ program run_d2bi
                 call errorExit("d2bi error - array of -ng parameters must match k,g-vectors ")
             end if    
             
-            ii=0 ; call get( cla,"dark",darkarray,ii,LIB_CLA_OPTIONAL,"         dark field imaging mode ",2  )
+            ii=0 ; darkarray=.true. ; call get( cla,"dark",darkarray,ii,LIB_CLA_OPTIONAL,"         dark field imaging mode ",2  )
             if ( ii==1 )  then
                 darkarray(1:nDiffConditions) = darkarray(1)   
             else if ( (nDiffConditions==1).and.(ii>1) ) then
@@ -364,23 +361,25 @@ program run_d2bi
             else if ( ii*(ii-nDiffConditions)/=0 ) then
                 call errorExit("d2bi error - array of -dark settings must match k,g-vectors ")
             end if 
+            call get( cla,"theta",THETA_MAX,LIB_CLA_OPTIONAL,"        maximum tilt search angle (deg) ",2 )
+            !if (hasArgument(cla,"theta")) THETA_MAX = THETA_MAX*PI/180.0d0
+ 
             
             call get( cla,"V",V,LIB_CLA_OPTIONAL,"            accelerating voltage (keV)",6)
             call get( cla,"nPrecAngle",nPrecAngle ,LIB_CLA_OPTIONAL,"   number of points take for convergent beam precession",6  )
             call get( cla,"precAngle",precAngle,LIB_CLA_OPTIONAL,"    angle (radians) for convergent beam precession",6  )
            
-            call get( cla,"nAperture ",nAperture ,LIB_CLA_OPTIONAL,"    number of points for aperture (try 1,8,17)",6  )
-            call get( cla,"apertureAngle",apertureAngle,LIB_CLA_OPTIONAL,"angle (radians) for aperture",6  )
+            ! call get( cla,"nAperture ",nAperture ,LIB_CLA_OPTIONAL,"    number of points for aperture (try 1,8,17)",6  )
+            ! call get( cla,"apertureAngle",apertureAngle,LIB_CLA_OPTIONAL,"angle (radians) for aperture",6  )
            
-           call get( cla,"tomoAngle",tomoAngle,LIB_CLA_OPTIONAL,"    tomography tilt half angle (deg)",6 )
-           call get( cla,"nTomoAngle",ntomoAngle,LIB_CLA_OPTIONAL,"   tomography tilt steps",6 )
+            call get( cla,"nTomoAngle",ntomoAngle,LIB_CLA_OPTIONAL,"   tomography tilt steps",6 )
+            call get( cla,"tomoAngle",tomoAngle,LIB_CLA_OPTIONAL,"    tomography tilt half angle (deg)",6 )
              
     
             
             
             
-            call get( cla,"phase",usePhase,LIB_CLA_OPTIONAL,"        use phase field in TEM calc",5  )
-            call get( cla,"test",test,LIB_CLA_OPTIONAL,"         check TEM parameters and exit",5  )
+            call get( cla,"density",useDensity,LIB_CLA_OPTIONAL,"      use atomic density field in TEM calc",5  )
             call get( cla,"alterg",alterg,LIB_CLA_OPTIONAL,"       use deformation gradient/diffraction pattern to adjust reciprocal lattice vectors ",5  )
             
     
@@ -393,13 +392,12 @@ program run_d2bi
                 end if
             end if     
 
-            call get( cla,"opxyz",opxyz,LIB_CLA_OPTIONAL,"        output .xyz file of atom positions after rotation to two-beam condition",3  )
             call get( cla,"xpad",xpad,LIB_CLA_OPTIONAL,"         while reading input file, add padding in x-direction to create a surface ",3  )
             call get( cla,"ypad",ypad,LIB_CLA_OPTIONAL,"         while reading input file, add padding in y-direction to create a surface ",3  )
             call get( cla,"zpad",zpad,LIB_CLA_OPTIONAL,"         while reading input file, add padding in z-direction to create a surface ",3  )
             
             call get( cla,"surf",surf,LIB_CLA_OPTIONAL,"         check atom extents for foil thickness instead of box size ",3  )
-            ii=0 ; dat = LIB_CLA_NODEFAULT_R ; call get( cla,"d",dat,ii,LIB_CLA_OPTIONAL,"            voxel grid extents after rotation to zone axis. Set 0 to use supercell, unset to use atom extents." ,3)
+            ii=0 ; dat = LIB_CLA_NODEFAULT_R ; call get( cla,"d",dat,ii,LIB_CLA_OPTIONAL,"            imaging space extents. Set 0 to use supercell, unset to use atom extents." ,3)
             if (ii == 1) then
                 d0(1:2) = 0.0d0
                 d0(3) = dat(1)
@@ -411,9 +409,9 @@ program run_d2bi
             end if
 
 
-            call get( cla,"findXYZOffset",findXYZOffset ,LIB_CLA_OPTIONAL,"find offset of atoms in .xyz file",3 )
-            call get( cla,"offset",removeOffset ,LIB_CLA_OPTIONAL,"       remove any global supercell offsets generated internally",3 )
-            ii=3 ; call get( cla,"addOffset",addOffset ,ii,LIB_CLA_OPTIONAL,"    add a global offset (in order to stitch together images)",3 )
+            !call get( cla,"findXYZOffset",findXYZOffset ,LIB_CLA_OPTIONAL,"find offset of atoms in .xyz file",3 )
+            !call get( cla,"offset",removeOffset ,LIB_CLA_OPTIONAL,"       remove any global supercell offsets generated internally",3 )
+            ii=3 ; call get( cla,"addOffset",addOffset ,ii,LIB_CLA_OPTIONAL,"    add a global atom position offset (in order to stitch together images)",3 )
     
             ii=9 ; dat = LIB_CLA_NODEFAULT_R ; call get( cla,"U",dat,ii,LIB_CLA_OPTIONAL,"            force crystal rotation matrix in column-major order" ,3)
             if (hasArgument(cla,"U")) then
@@ -430,6 +428,8 @@ program run_d2bi
                     call errorExit("d2bi error - input R matrix has a determinant  /= 1")                         
                 end if
             end if
+            call get( cla,"opxyz",opxyz,LIB_CLA_OPTIONAL,"        output .xyz file of atom positions after rotation to two-beam condition",3  )
+
             
     
 
@@ -488,14 +488,7 @@ program run_d2bi
                 opxyz = .false.
                 oppng = .false.
             end if
-            
-            if ( test .and. ((len_trim(outfile0)>0) .or. opxyz .or. oppng) ) then
-                if (rank==0) write(*,fmt='(a)') "d2bi warning - conflicting options -o / -opxyz / -png and -test"
-                if (rank==0) write(*,fmt='(a)') "    setting -test -o """" -noopxyz -nopng"
-                opxyz = .false.
-                oppng = .false.
-                outfile0 = ""
-            end if
+             
             
             oppng = oppng .and. (rank==0)
             opxyz = opxyz .and. (rank==0)
@@ -549,25 +542,25 @@ program run_d2bi
             end if        
      
             
-            if ( len_trim(defGradFile) /= 0 ) then
-                inquire(file=trim(defGradFile),exist=ok)
-                if (.not. ok) then
-                    call errorExit("d2bi error - could not find def grad file -DG """//trim(defGradFile)//"""")            
-                end if
-                if (.not. alterg) then
-                    if (rank==0) write(*,fmt='(a)') "d2bi warning - conflicting options '-DG' and '-noalterg'" 
-                    if (rank==0) write(*,fmt='(a)') "    no point reading the deformation gradient and not using it" 
-                    if (rank==0) write(*,fmt='(a)') "    setting -alterg" 
-                    alterg = .true.
-                end if
-            end if
+            ! if ( len_trim(defGradFile) /= 0 ) then
+            !     inquire(file=trim(defGradFile),exist=ok)
+            !     if (.not. ok) then
+            !         call errorExit("d2bi error - could not find def grad file -DG """//trim(defGradFile)//"""")            
+            !     end if
+            !     if (.not. alterg) then
+            !         if (rank==0) write(*,fmt='(a)') "d2bi warning - conflicting options '-DG' and '-noalterg'" 
+            !         if (rank==0) write(*,fmt='(a)') "    no point reading the deformation gradient and not using it" 
+            !         if (rank==0) write(*,fmt='(a)') "    setting -alterg" 
+            !         alterg = .true.
+            !     end if
+            ! end if
             
             
             
             if ( len_trim(orientationFile) /= 0 ) then
                 inquire(file=trim(orientationFile),exist=ok)
                 if (.not. ok) then
-                    call errorExit("d2bi error - could not find orientation file -dp """//trim(defGradFile)//"""")            
+                    call errorExit("d2bi error - could not find orientation file -dp """//trim(orientationFile)//"""")            
                 end if
                 if (.not. alterg) then
                     if (rank==0) write(*,fmt='(a)') "d2bi warning - conflicting options '-dp' and '-noalterg'" 
@@ -634,18 +627,18 @@ program run_d2bi
                 print *,"lattice            : """//trim(latticeName)//""""
                 print *,"M (voxels per cell): ",M
         
-                print *,"findXYZOffset      : ",findXYZOffset
+                !print *,"findXYZOffset      : ",findXYZOffset
      
                 if (len_trim(orientationFile)/=0) then
                     print *,"using orientation file """//trim(orientationFile)//""""
                 else 
                     print *,"no orientation file set"
                 end if
-                if (len_trim(defGradFile)/=0) then
-                    print *,"using def grad file """//trim(defGradFile)//""""
-                else 
-                    print *,"no deformation gradient file set"
-                end if
+                ! if (len_trim(defGradFile)/=0) then
+                !     print *,"using def grad file """//trim(defGradFile)//""""
+                ! else 
+                !     print *,"no deformation gradient file set"
+                ! end if
                 print *,"output .png ?      : ",opPng
                 if (opPng) &
                 write(*,fmt='(a,3f12.5)') " .png min/max/blur  : ",png_min,png_max,png_blur
@@ -687,12 +680,12 @@ program run_d2bi
                     print *,"    no convergent beam precession"
                 end if
                
-                if (nAperture>1) then
-                    print *,"    number of points sampling aperture ",nAperture
-                    write (*,fmt='(a,f10.5,a)') "     angle for aperture ",apertureAngle," (rad)"
-                else
-                    print *,"    using pinprick aperture "
-                end if
+                ! if (nAperture>1) then
+                !     print *,"    number of points sampling aperture ",nAperture
+                !     write (*,fmt='(a,f10.5,a)') "     angle for aperture ",apertureAngle," (rad)"
+                ! else
+                !     print *,"    using pinprick aperture "
+                ! end if
                
                if (xpad) print *,"    creating surface by padding normal to x- direction in input .xyz file"
                if (ypad) print *,"    creating surface by padding normal to y- direction in input .xyz file"
@@ -756,7 +749,7 @@ program run_d2bi
                     write(*,fmt='(a,3f16.12)') "                         ",R(2,:)
                     write(*,fmt='(a,3f16.12)') "                         ",R(3,:)
                 else
-                    write (*,fmt='(a,f10.5,a)') "     tilt stage max angle ",THETA_MAX*180.0/PI," (deg)"
+                    write (*,fmt='(a,f10.5,a)') "     tilt stage max angle ",THETA_MAX," (deg)"
                 end if
                 if (ntomoAngle>1) then
                     write (*,fmt='(a,f10.5,a)') "     tomography max angle ",tomoAngle," (deg)"
@@ -768,9 +761,8 @@ program run_d2bi
          
                print *,"    output .xyz file after rotation + tilt ",opxyz
                
-               print *,"    use phase field   ",usePhase
-               if (test) &
-               print *,"    [ test mode ]"
+               print *,"    use atomic density field   ",useDensity
+                
         
                
                 if (addOffset(1) /= LIB_CLA_NODEFAULT_R) then
@@ -807,14 +799,15 @@ program run_d2bi
                 xyz = XYZFile_ctor(filename)
                 call readHeader(xyz,ok)
                 call input(xyz,verbose=(rank==0))
-                if (findXYZOffset) then
-                    offset = findOffset(xyz,a0,offset=0.25d0)
-                    call adjustOffset(xyz,a0,offset=0.25d0,verbose=(rank==0))
-                    print *,"d2bi info - offset adjusted from file ",offset
-                else
-                    print *,"d2bi info - not adjusting offset in .xyz file"
-                    offset = 0
-                end if
+                offset = 0
+                ! if (findXYZOffset) then
+                !     offset = findOffset(xyz,a0,offset=0.25d0)
+                !     call adjustOffset(xyz,a0,offset=0.25d0,verbose=(rank==0))
+                !     print *,"d2bi info - offset adjusted from file ",offset
+                ! else
+                !     print *,"d2bi info - not adjusting offset in .xyz file"
+                !     offset = 0
+                ! end if
                 call report(xyz)
                 call getSupercell(xyz,a_super,ok)
                 if (ok) then            
@@ -886,9 +879,9 @@ program run_d2bi
     !                 end if
                     
                     if (nTomoAngle > 1) then
-                        theta = tomoAngle*PI/180.0 + THETA_MAX + precAngle  
+                        theta = ( tomoAngle + THETA_MAX )*PI/180.0 + precAngle  
                     else
-                        theta = THETA_MAX + precAngle  
+                        theta = THETA_MAX*PI/180.0 + precAngle  
                     end if
                     
                     
@@ -1011,68 +1004,69 @@ program run_d2bi
             if (alterg) then
                     
     
-                if ( len_trim(defGradFile) /= 0 ) then
+                ! if ( len_trim(defGradFile) /= 0 ) then
                 
-                    !   read spatially varying deformation gradient field from disk. Rank 0 reads then broadcasts
-                    if (rank==0) then
-                        print *,""
-                        print *,"reading def grad field"
-                        print *,"^^^^^^^^^^^^^^^^^^^^^^"
-                        print *,""
-                        print *,"filename """//trim(defGradFile)//""" (binary file)"
+                !     !   read spatially varying deformation gradient field from disk. Rank 0 reads then broadcasts
+                !     if (rank==0) then
+                !         print *,""
+                !         print *,"reading def grad field"
+                !         print *,"^^^^^^^^^^^^^^^^^^^^^^"
+                !         print *,""
+                !         print *,"filename """//trim(defGradFile)//""" (binary file)"
                    
                          
-                        call computeAvgDefGrad(eps_bar,dfg_bar,weight)
+                !         call computeAvgDefGrad(eps_bar,dfg_bar,weight)
              
-                        open(unit=808,file=trim(defGradFile),action="read",form="unformatted")
-                        !---    old line 22/05/23            
-                        !   read(unit=808) ii
-                        !   if (ii /= Mx*My*Mz) then
-                        !       new line
-                            read(unit=808) dummy(1:10)
-                            xyzHasDistance = (dummy(9:10) == "+d")
-                            read(unit=808) ix,iy,iz
-                            if ( .not. ( (ix==Mx).and.(iy==My).and.(iz==Mz) ) ) then                    
-                                if (rank==0) print *,"d2bi warning - phase field allocated has ",Mx,",",My,",",Mz," nodes, phase field in file has ",ix,",",iy,",",iz," nodes"                        
-                            end if    
+                !         open(unit=808,file=trim(defGradFile),action="read",form="unformatted")
+                !         !---    old line 22/05/23            
+                !         !   read(unit=808) ii
+                !         !   if (ii /= Mx*My*Mz) then
+                !         !       new line
+                !             read(unit=808) dummy(1:10)
+                !             xyzHasDistance = (dummy(9:10) == "+d")
+                !             read(unit=808) ix,iy,iz
+                !             if ( .not. ( (ix==Mx).and.(iy==My).and.(iz==Mz) ) ) then                    
+                !                 if (rank==0) print *,"d2bi warning - phase field allocated has ",Mx,",",My,",",Mz," nodes, phase field in file has ",ix,",",iy,",",iz," nodes"                        
+                !             end if    
                             
-                            if (xyzHasDistance) then
-                                if (rank==0) print *,"reading column for distance"                        
-                                do iz = 0,Mz-1
-                                    do iy = 0,My-1
-                                        do ix = 0,Mx-1
-                                            call progressBar( ix + 1+ Mx*(iy + My*iz)+1,Mx*My*Mz )
-                                            read (unit=808) dat(1:9),dp 
-                                            call computeAvgDefGrad( dat(1:9),1.0d0, eps_bar,dfg_bar,weight)
-                                        end do
-                                    end do
-                                end do
-                            else
-                                do iz = 0,Mz-1
-                                    do iy = 0,My-1
-                                        do ix = 0,Mx-1
-                                            call progressBar( ix + 1+ Mx*(iy + My*iz)+1,Mx*My*Mz )
-                                            read (unit=808) dat(1:9)
-                                            call computeAvgDefGrad( dat(1:9),1.0d0, eps_bar,dfg_bar,weight)
-                                        end do
-                                    end do
-                                end do
-                            end if
-                        close(unit=808)
-                        call computeAvgDefGrad(eps_bar,dfg_bar,weight , dfg) ; dfg_bar = dfg
-                        print *,"d2bi info - average deformation gradient, strain, rot read from binary file "
+                !             if (xyzHasDistance) then
+                !                 if (rank==0) print *,"reading column for distance"                        
+                !                 do iz = 0,Mz-1
+                !                     do iy = 0,My-1
+                !                         do ix = 0,Mx-1
+                !                             call progressBar( ix + 1+ Mx*(iy + My*iz)+1,Mx*My*Mz )
+                !                             read (unit=808) dat(1:9),dp 
+                !                             call computeAvgDefGrad( dat(1:9),1.0d0, eps_bar,dfg_bar,weight)
+                !                         end do
+                !                     end do
+                !                 end do
+                !             else
+                !                 do iz = 0,Mz-1
+                !                     do iy = 0,My-1
+                !                         do ix = 0,Mx-1
+                !                             call progressBar( ix + 1+ Mx*(iy + My*iz)+1,Mx*My*Mz )
+                !                             read (unit=808) dat(1:9)
+                !                             call computeAvgDefGrad( dat(1:9),1.0d0, eps_bar,dfg_bar,weight)
+                !                         end do
+                !                     end do
+                !                 end do
+                !             end if
+                !         close(unit=808)
+                !         call computeAvgDefGrad(eps_bar,dfg_bar,weight , dfg) ; dfg_bar = dfg
+                !         print *,"d2bi info - average deformation gradient, strain, rot read from binary file "
                         
                      
-                     end if
+                !      end if
                       
                      
-                else if (len_trim(orientationFile)/=0) then
+                !else if (len_trim(orientationFile)/=0) then
+                if (len_trim(orientationFile)/=0) then
                 
-                    !   read average deformation gradient field from disk
+                    !   read average orientation from disk
                     if (rank==0) then
                         print *,""
-                        print *,"reading diffraction pattern"
-                        print *,"^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+                        print *,"reading orientation file"
+                        print *,"^^^^^^^^^^^^^^^^^^^^^^^^"
                         print *,""
                         print *,"filename """//trim(orientationFile)//""""
                         open(unit=809,file=trim(orientationFile),action="read")
@@ -1089,13 +1083,13 @@ program run_d2bi
                                 print *,"    grain ",ii," count ",nGrain(ii)
                             end do
                             ll = maxloc(nGrain,dim=1) - 1
-                            if (rank==0) print *,"using diffraction pattern for most populous grain ",ll," frac ", nGrain(ll)*100.0/nAtoms," %"
+                            if (rank==0) print *,"using orientation for most populous grain ",ll," frac ", nGrain(ll)*100.0/nAtoms," %"
                             deallocate(nGrain)
                             do ii = 1,kk
                                 read(unit=809,fmt=*) ix,dfg 
                                 if (ii==ll) then
                                     dfg_bar = dfg
-                                    print *,"d2bi info - average deformation gradient, strain, rot read from grain file "                            
+                                    print *,"d2bi info - average deformation gradient, strain, rot read from orientation file "                            
                                 end if
                                 
                             end do
@@ -1281,7 +1275,7 @@ program run_d2bi
                 d2bi = DynamicalTwoBeamImaging_ctor( super,latt,a0 , k3,g3,V, m(1),m(2))
                 call setConventionalUnitCell( d2bi,a_cell )            
                 call setVoxelSupercellSize( d2bi,d )
-                call setTestMode( d2bi,test )    
+                 
           
                 if (rank==0) then
                     print *,""
@@ -1321,7 +1315,7 @@ program run_d2bi
                 sg = getDeviationParameter( d2bi )              !   could have been set by rotations
                 call setExtinctionDistances( d2bi,xi0,xig )                                             !   sets values for xi_0 and xi_g
                 call findImageParameters( d2bi,aperpx,xmax,modg,Mx,My,Mz )                              !   returns angstroms per pixel and number of rotated frame voxel subdivisions
-                call setUsePhaseField(d2bi,usePhase)
+                call setuseDensityField(d2bi,useDensity)
                 
          
             !---    output to screen information about the deviation parameter and the crystal and foil tilts used
@@ -1394,7 +1388,7 @@ program run_d2bi
                     end if
                     outfile = trim(dummy)//trim(bbbb) 
                     if (nPrecAngle > 1) outfile = trim(outfile)//"_p"
-                    if (nAperture > 1)  outfile = trim(outfile)//"_a"
+                    !if (nAperture > 1)  outfile = trim(outfile)//"_a"
                 end if        
                         
                 
@@ -1492,14 +1486,14 @@ program run_d2bi
                                     write(unit=903,fmt='(a,3f10.3,f12.5)') "# g       ",g3,modg
                                 end if
                                 write(unit=903,fmt='(a,3i8)')    "# M       ",M
-                                write(unit=903,fmt='(a,3f10.0)') "# V (eV)  ",V
+                                write(unit=903,fmt='(a,3f10.0)') "# V (keV) ",V
                                 write(unit=903,fmt='(a,3f12.5)') "# xi (A)  ",xi0,xig
                                 if (ng /= LIB_CLA_NODEFAULT_R) then
                                     write(unit=903,fmt='(a,f8.3)') "# n_g     ",ng 
                                 end if
                                 write(unit=903,fmt='(a,3f12.5)') "# s_g (1/A)    ",getDeviationParameter( d2bi )
                               
-                                write(unit=903,fmt='(a,3f12.3)') "# foil (A)     ",xmax
+                                write(unit=903,fmt='(a,3f12.3)') "# img space (A)",xmax
                                 write(unit=903,fmt='(a,3f12.5)') "# scale (A/px) ",aperpx
                                 
                                 

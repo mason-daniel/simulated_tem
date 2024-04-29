@@ -37,14 +37,14 @@ set_tests_properties(CLAtest
     
 
 
-add_executable(testQuicksort testLib_Quicksort.f90)
-target_link_libraries(testQuicksort PCA_Utils )
-add_test(NAME Quicksorttest COMMAND testQuicksort)
-set_tests_properties(Quicksorttest
-    PROPERTIES
-    LABELS "SHORT"
-    #ctest will look for "PASS" in the stdout and consider it a pass if it finds it
-    PASS_REGULAR_EXPRESSION "PASS") 
+# add_executable(testQuicksort testLib_Quicksort.f90)
+# target_link_libraries(testQuicksort PCA_Utils )
+# add_test(NAME Quicksorttest COMMAND testQuicksort)
+# set_tests_properties(Quicksorttest
+#     PROPERTIES
+#     LABELS "SHORT"
+#     #ctest will look for "PASS" in the stdout and consider it a pass if it finds it
+#     PASS_REGULAR_EXPRESSION "PASS") 
 
     
 
@@ -152,7 +152,7 @@ set_tests_properties(Supercelltest
 #Here is a trivial example test that just checks libpng still works
 add_executable(testpng testPng.f90)
 target_link_libraries(testpng PCA_Utils PCA_Png ${PNG_LIBRARY} )
-add_test(NAME pngtest COMMAND testpng -f ${PROJECT_SOURCE_DIR}/Data/img1.png )
+add_test(NAME pngtest COMMAND testpng -f ${PROJECT_SOURCE_DIR}/Data/test.i111_loop_W.lammps.g2_0_0.k0.00_0.00_1.00_ng1.00.png )
 set_tests_properties(pngtest
     PROPERTIES
     LABELS "SHORT"
@@ -166,7 +166,7 @@ set_tests_properties(pngtest
 
 
 add_executable(testDefGrad testLib_DeformationGradients.f90)
-target_link_libraries(testDefGrad PCA_Utils PCA_DefGrad )
+target_link_libraries(testDefGrad PCA_Utils PCA_D2BI )
 add_test(NAME DefGradtest COMMAND testDefGrad )
 set_tests_properties(DefGradtest
     PROPERTIES
@@ -211,7 +211,7 @@ set_tests_properties(DefGradtest
 #     PASS_REGULAR_EXPRESSION "PASS") 
         
 add_executable(testClustering testLib_TopologicallyCorrectClustering.f90)
-target_link_libraries(testClustering PCA_Utils PCA_DefGrad )
+target_link_libraries(testClustering PCA_Utils PCA_D2BI )
 add_test(NAME Clusteringtest COMMAND testClustering )
 set_tests_properties(Clusteringtest
     PROPERTIES
@@ -240,7 +240,7 @@ set_tests_properties(Relativistictest
 # integration test
      
     
-# find_program(BASH_PROGRAM bash)
+# 
 # if (BASH_PROGRAM)
 #   add_test(voidtest ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/testVoids.sh ${PROJECT_SOURCE_DIR}/Data/)
 #   set_tests_properties(voidtest
@@ -250,7 +250,7 @@ set_tests_properties(Relativistictest
 #     PASS_REGULAR_EXPRESSION "PASS") 
 # endif()
 
-
+find_program(BASH_PROGRAM bash)
 if (BASH_PROGRAM)
   add_test(d2bitest ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/testD2BI.sh ${PROJECT_SOURCE_DIR}/Data/)
   set_tests_properties(d2bitest

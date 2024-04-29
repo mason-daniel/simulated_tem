@@ -52,6 +52,17 @@
                                                                         "-0.262523 -0.611148 0.872727                                ", &
                                                                         "old cell/super vols         1.32000   443.52000             ",  &
                                                                         "old cell/super vols         1.34400   443.52000             "   /)
+                                                                        
+        character(len=*),dimension(10),parameter   ::      output0_alternate = (/ "cell space                  3.05000     5.55455    -1.02500 ", &     !   negative zero output is acceptable
+                                                                        "real space                  3.05000     6.11000    -1.23000 ", &
+                                                                        "real space (pbc)            3.05000     6.11000     8.37000 ", &
+                                                                        "minimum image               3.05000    -1.59000    -1.23000 ", &
+                                                                        "pbc/min image in cell?      T     F                         ", &
+                                                                        " 1.104338 -0.000000 0.318019                                ", &   
+                                                                        " -0.191639 0.837203 0.637080                                ", &
+                                                                        "-0.262523 -0.611148 0.872727                                ", &
+                                                                        "old cell/super vols         1.32000   443.52000             ",  &
+                                                                        "old cell/super vols         1.34400   443.52000             "   /)                                                                        
                                                                          
         logical                     ::      ok 
         integer                     ::      ii          
@@ -90,6 +101,10 @@
         call report(super2)
         
         a_cell = getA(super2)
+        ! print *,"a_cell(1,2)",a_cell(1,2), (a_cell(1,2)==0), (a_cell(1,2)==-0)
+        ! where (a_cell==-0.0d0)
+        !     a_cell=0.0d0
+        ! endwhere
         write (output(6),fmt='(3f16.6)')  a_cell(1,1:3)
         write (output(7),fmt='(3f16.6)')  a_cell(2,1:3)
         write (output(8),fmt='(3f16.6)')  a_cell(3,1:3)
@@ -105,7 +120,7 @@
     !---    here is the simple test: does the output look like the stored output?
         ok = .true.
         do ii = 1,size(output)            
-            if ( trim(cutSpaces(output(ii))) == trim(cutSpaces(output0(ii))) ) then
+            if ( ( trim(cutSpaces(output(ii))) == trim(cutSpaces(output0(ii))) ).or.( trim(cutSpaces(output(ii))) == trim(cutSpaces(output0_alternate(ii))) ) ) then
                 write (*,fmt='(a)') trim(cutSpaces(output(ii)))
             else
                 ok = .false.

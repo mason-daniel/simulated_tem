@@ -242,13 +242,13 @@
             return
         end function allRequiredArgumentsSet
     
-        function hasHelpArgument(this) result(has)      !   note: dummy argument not used.
+        function hasHelpArgument(this) result(has)       
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             type(commandLineArguments),intent(in)   ::      this        
             logical                                 ::      has
             integer             ::      kk
             character(len=256)  ::      cla
-            has = .false.
+            has = (this%nArgs0 == 0)                !   if CLA is not defined, then always assume we need help
             do kk = 1,command_argument_count()
                 call get_command_argument( kk,cla )
                 if ( (trim(cla)=="-h").or.(trim(cla)=="-help").or.(trim(cla)=="--h").or.(trim(cla)=="--help") ) then 

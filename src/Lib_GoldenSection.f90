@@ -1,6 +1,6 @@
 
     module Lib_GoldenSection
-!---^^^^^^^^^^^^^^^
+!---^^^^^^^^^^^^^^^^^^^^^^^^
 !*      generic golden section search
 !*      operation should be
 !*

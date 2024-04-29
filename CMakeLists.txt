@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.14)
 
 #Change the name and the version as you like
 project(SIMULATED_TEM
-    VERSION 0.0.1
+    VERSION 0.1.0
     #Add C, CXX etc if interface moves to the same project
     LANGUAGES C Fortran)
 
@@ -11,7 +11,7 @@ project(SIMULATED_TEM
 find_package(MPI)
 include_directories(SYSTEM ${MPI_INCLUDE_PATH})    
 
-find_package(OpenMP)
+#find_package(OpenMP)
 
 include(CMakePrintHelpers)
 cmake_print_variables(PROJECT_NAME)
@@ -25,19 +25,27 @@ cmake_print_variables(CMAKE_Fortran_COMPILER)
 # I'm not sure this is working exactly as expected: 
 #   I'd think that "MPI_Fortran_HAVE_F08_MODULE" means "I can find the mpi_f08 module" 
 #   
-if (MPI_Fortran_HAVE_F08_MODULE)
-    message(STATUS "MPI F08-compliant compiler found, will add -DMPI flag to compilation") 
-    add_definitions(-DMPI)
+if ( CMAKE_SERIAL )
+    message ("forcing serial compilation")
 else()
-    message(WARNING "MPI F08-compliant compiler not found")
+    message ("parallel compilation")
+    #   Grab MPI?
+    find_package(MPI)
+    include_directories(SYSTEM ${MPI_INCLUDE_PATH})      
+    if (MPI_Fortran_HAVE_F08_MODULE)
+        message(STATUS "MPI F08-compliant compiler found, will add -DMPI flag to compilation") 
+        add_definitions(-DMPI)
+    else()
+        message(WARNING "MPI F08-compliant compiler not found")    
+    endif()
 endif()
 
 
         
-if (OPENMP_FOUND)
-    set (CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${OpenMP_Fortran_FLAGS}")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-endif()
+# if (OPENMP_FOUND)
+#     set (CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${OpenMP_Fortran_FLAGS}")
+#     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+# endif()
 
 
 
@@ -48,9 +56,11 @@ option(ENABLE_TESTS "Build unit tests" ON)
 #Don't know if the flags work for ifort
 if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     #Set some compiler flags
+    message(STATUS "setting compile/link options for GNU fortran compiler")    
+    set (CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -ffree-line-length-256")
     add_compile_options(
         #Added regardless of build options
-        "-ffree-line-length-256;-I/usr/include;-cpp;-Wall"
+        "-I/usr/include;-cpp;-Wall"
         #For CMAKE_BUILD_TYPE=Release
         "$<$<CONFIG:Release>:-O2;-march=native>"
         #For general profiling, prevents inlining, and adds debug info but still optimised
@@ -66,6 +76,7 @@ elseif(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
     #Add flags for intel (am assuming the old and LLVM compilers have the same flags 
     #I think can use STREQUAL "Intel" and STREQUAL "IntelLLVM" to distinguish
     #if needed
+    message(STATUS "setting compile/link options for Intel fortran compiler")    
     add_compile_options(
         #Added regardless of build options
         "-cpp"
@@ -107,4 +118,4 @@ install(EXPORT ${PROJECT_NAME}_Targets
     ${PROJECT_NAME}::
     DESTINATION
     lib/cmake)
-export(TARGETS PCA_Utils PCA_Png PCA_Atoms PCA_DefGrad FILE ${PROJECT_NAME}Config.cmake)
+export(TARGETS PCA_Utils PCA_Png PCA_Atoms FILE ${PROJECT_NAME}Config.cmake)

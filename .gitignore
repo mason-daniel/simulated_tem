@@ -43,3 +43,4 @@ build/
 *.json
 /bin/Junk
 /src/Junk
+/install

@@ -23,10 +23,11 @@
 
         integer,public,parameter                    ::      NTHETA  = 2000
         real(kind=real64),public                    ::      RHO_MAX = 10.0d0
-        real(kind=real64),public                    ::      THETA_MAX = 5.0d0 * PI/180.0d0
+        real(kind=real64),public                    ::      THETA_MAX = 5.0d0  
         integer(kind=int64),private,parameter       ::      BADF00D = int( z'BADF00D',kind=int64 )        
         real(kind=real64),private,parameter         ::      SG_UNSET = transfer( (BADF00D+ishft(BADF00D,32_int64)),1.0d0 )
-        
+        real(kind=real64),private,parameter         ::      DEGTORAD = 3.141592654d0/180
+
         public              ::      rotateToStandardFrame
         public              ::      findBestRotationMatrix
         public              ::      tiltToDarkField
@@ -234,16 +235,16 @@
             allocate( khat(3,4*NTHETA) )
                             
             theta0 = 0 ; phi0 = 0
-            call findAllEulerAngles( v,ghkl0,theta0,phi0,THETA_MAX,khat,nk )
+            call findAllEulerAngles( v,ghkl0,theta0,phi0,THETA_MAX*DEGTORAD,khat,nk )
             if (nk == 0) then
                 if (rank==0) write (*,fmt='(a)') "Lib_DiffractionConditions::findBestRotationMatrix warning - no tilt angles meet diffraction condition - trying double tilt..."
-                call findAllEulerAngles( v,ghkl0,theta0,phi0,2*THETA_MAX,khat,nk )
+                call findAllEulerAngles( v,ghkl0,theta0,phi0,2*THETA_MAX*DEGTORAD,khat,nk )
                 if (nk == 0) then
                     if (rank==0) write (*,fmt='(a)') "Lib_DiffractionConditions::findBestRotationMatrix WARNING - no tilt angles meet diffraction condition - trying no phi restriction..."
-                    call findAllEulerAngles( v,ghkl0,theta0,phi0,THETA_MAX,khat,nk , nolimitPhi = .true.)
+                    call findAllEulerAngles( v,ghkl0,theta0,phi0,THETA_MAX*DEGTORAD,khat,nk , nolimitPhi = .true.)
                 end if
             end if
-            if (rank==0) write (*,fmt='(a,i8,a,f12.3,a)') "Lib_DiffractionConditions::findBestRotationMatrix info - number of tilt angles to test ",nk," max theta ",THETA_MAX*180.0d0/3.141592654d0," (deg)"
+            if (rank==0) write (*,fmt='(a,i8,a,f12.3,a)') "Lib_DiffractionConditions::findBestRotationMatrix info - number of tilt angles to test ",nk," max theta ",THETA_MAX," (deg)"
             
         !---    note that testing a rotated g vector against a constant k vector is equivalent to a constant g-vector and rotating k.            
              
@@ -638,13 +639,13 @@
             
             const = - HBAR*(gg(1)*gg(1)+gg(2)*gg(2)+gg(3)*gg(3))/(4*PI*ME*v)
             
-            x1 = -THETA_MAX*0.01d0
+            x1 = -THETA_MAX*0.01d0*DEGTORAD
             cost = cos(x1) ; sint = sin(x1)            
             Lp  = foil_thickness/cost
             sgp = ( sint*gg(1) - cost*gg(3) )/(2*PI)            
             y1 = -(bg*sin( PI* sqrt( sgp*sgp + bg*bg )*Lp ))**2 / ( sgp*sgp + bg*bg )
             
-            x3 = +THETA_MAX*0.01d0
+            x3 = +THETA_MAX*0.01d0*DEGTORAD
             cost = cos(x3) ; sint = sin(x3)            
             Lp  = foil_thickness/cost
             sgp = ( sint*gg(1) - cost*gg(3) )/(2*PI)            
@@ -1031,13 +1032,13 @@
             
             const = - HBAR*(gg(1)*gg(1)+gg(2)*gg(2)+gg(3)*gg(3))/(4*PI*ME*v)
             
-            x1 = -THETA_MAX*0.01d0
+            x1 = -THETA_MAX*0.01d0*DEGTORAD
             cost = cos(x1) ; sint = sin(x1)            
             Lp  = foil_thickness/cost
             sgp = ( sint*gg(1) - cost*gg(3) )/(2*PI)            
             y1 = (bg*sin( PI* sqrt( sgp*sgp + bg*bg )*Lp ))**2 / ( sgp*sgp + bg*bg )
             
-            x3 = +THETA_MAX*0.01d0
+            x3 = +THETA_MAX*0.01d0*DEGTORAD
             cost = cos(x3) ; sint = sin(x3)            
             Lp  = foil_thickness/cost
             sgp = ( sint*gg(1) - cost*gg(3) )/(2*PI)            
@@ -1672,7 +1673,7 @@
                         jj = nint( (pp - phi0)/(2*PI) )
                         pp = pp - 2*jj*PI
                         
-                        if (abs(pp-phi0) <= 2*THETA_MAX) then
+                        if (abs(pp-phi0) <= 2*THETA_MAX*DEGTORAD) then
                             phi(1) = pp
                             phi(2) = -pp
                             nphi = 2   
@@ -1683,7 +1684,7 @@
                         pp = acos( uu - vv )
                         jj = nint( (pp - phi0)/(2*PI) )
                         pp = pp - 2*jj*PI
-                        if (abs(pp-phi0) <= 2*THETA_MAX) then
+                        if (abs(pp-phi0) <= 2*THETA_MAX*DEGTORAD) then
                             phi(nphi+1) = pp
                             phi(nphi+2) = -pp
                             nphi = nphi+2
@@ -1699,7 +1700,7 @@
                 jj = nint( (pp - phi0)/(2*PI) )
                 pp = pp - 2*jj*PI
                 
-                if (abs(pp-phi0) <= THETA_MAX) then
+                if (abs(pp-phi0) <= THETA_MAX*DEGTORAD) then
                     phi(1) = pp
                     phi(2) = -pp
                     nphi = 2   
@@ -1710,7 +1711,7 @@
                 pp = acos( uu - vv )
                 jj = nint( (pp - phi0)/(2*PI) )
                 pp = pp - 2*jj*PI
-                if (abs(pp-phi0) <= THETA_MAX) then
+                if (abs(pp-phi0) <= THETA_MAX*DEGTORAD) then
                     phi(nphi+1) = pp
                     phi(nphi+2) = -pp
                     nphi = nphi+2
