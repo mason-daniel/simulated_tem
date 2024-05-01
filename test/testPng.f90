@@ -17,7 +17,7 @@
          
          
         type(CommandLineArguments)      ::      cla
-        character(len=256)              ::      filename = "data/img1.png"             
+        character(len=256)              ::      filename = ""             
         logical                         ::      quiet = .false.
         
         real(kind=real64),dimension(:,:),allocatable        ::      img

@@ -1672,7 +1672,9 @@
             
         
             nAtoms = size(x,dim=2)
+         
             sigma = this%a0 / 2                                                                                     !   spreading width for atomic phase factor
+                                                                                
             i2s2 = 1/(2*sigma*sigma)
             deltaM = ceiling( 3*sigma/min( getCellSideLength(this%gksuper,1),getCellSideLength(this%gksuper,2) ) )  !   number of gksuper cells needed for 3 sigma
             !nMax = ceiling( 2*deltaM*deltaM*nAtoms/superCellVolume(this%gksuper) )

@@ -1,8 +1,5 @@
 #!/bin/bash
 #   short script to test output of d2bi code.
-#   returns "PASS" if the output of the command
-#        ./bin/d2bi -f ../Data/testhcpMonovac.xyz -a0 3 -lattice hcp -k 0,0,0,1 -g 1,0,-1,0  -nousePhase -xifile ../Polycrystal-Analysis/Data/extinctionDistances.Zr_V200_T300.dat 
-#   gives a single vacancy TEM image
 #   usage:
 #       testD2BI.sh [data_directory]
   
@@ -17,12 +14,12 @@ else
     #   so multiply columns x 1000000 to give 0,132,15                                                                                           
 
     data_directory=$1
-    test_xyz_file=test.i111_loop_W.lammps
+    test_xyz_file=test/test.i111_loop_W.lammps
     target_min=0.000028         #   target output  
     target_max=0.230127
     target_avg=0.081501    
     accuracy=0.0039             #    = 1/256, the limit of greyscale intensity resolution 
-    xi_file=${data_directory}/extinctionDistances.W_V200_T300.dat
+    xi_file=${data_directory}/ExtinctionDistances/extinctionDistances.W_V200_T300.dat
 
     mpirun -n 1 ../bin/d2bi  -f ${data_directory}/${test_xyz_file} -a0 3.1652 -lattice bcc -k 0,0,1 -g 2,0,0 -xifile ${xi_file} -ng 1 -o "" > d2biresult 
 

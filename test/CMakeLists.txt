@@ -152,7 +152,7 @@ set_tests_properties(Supercelltest
 #Here is a trivial example test that just checks libpng still works
 add_executable(testpng testPng.f90)
 target_link_libraries(testpng PCA_Utils PCA_Png ${PNG_LIBRARY} )
-add_test(NAME pngtest COMMAND testpng -f ${PROJECT_SOURCE_DIR}/Data/test.i111_loop_W.lammps.g2_0_0.k0.00_0.00_1.00_ng1.00.png )
+add_test(NAME pngtest COMMAND testpng -f ${PROJECT_SOURCE_DIR}/Data/test/test.i111_loop_W.lammps.g2_0_0.k0.00_0.00_1.00_ng1.00.png )
 set_tests_properties(pngtest
     PROPERTIES
     LABELS "SHORT"

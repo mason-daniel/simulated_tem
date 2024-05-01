@@ -352,216 +352,10 @@
             uvw_l(1:3) = nint( zz(1:3) * 1 )
             
             
-!            if (rank==0) then
-!                write (*,fmt='(3f12.5,3(a,i4))') R(1,:),"        ",uvw_l(1),"  ",uvw_m(1),"  ",uvw_h(1)                                               
-!                write (*,fmt='(3f12.5,3(a,i4))') R(2,:),"        ",uvw_l(2),"  ",uvw_m(2),"  ",uvw_h(2)                                                
-!                write (*,fmt='(3f12.5,3(a,i4))') R(3,:),"        ",uvw_l(3),"  ",uvw_m(3),"  ",uvw_h(3)   
-!                
-!                
-!                write(*,fmt='(a)',advance="no") "Lib_DiffractionConditions::findBestRotationMatrix info - crystal rot -D2BI_U "
-!                write(aaaa,fmt='(f16.12)') U(1,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","     
-!                write(aaaa,fmt='(f16.12)') U(2,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') U(3,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') U(1,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') U(2,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') U(3,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') U(1,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') U(2,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') U(3,3) ; write(*,fmt='(a)',advance="yes") trim(adjustl(aaaa)) 
-!                
-!                                                             
-!                write(*,fmt='(a)',advance="no") "Lib_DiffractionConditions::findBestRotationMatrix info - foil tilt -D2BI_R "
-!                write(aaaa,fmt='(f16.12)') R(1,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') R(2,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') R(3,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') R(1,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') R(2,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') R(3,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') R(1,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') R(2,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!                write(aaaa,fmt='(f16.12)') R(3,3) ; write(*,fmt='(a)',advance="yes") trim(adjustl(aaaa)) 
-!            end if
-             
             
             return
         end subroutine findBestRotationMatrix
-!         
-!         subroutine tiltToDarkField( v,A_cell, hkl , xi0,xig,foil_thickness,U, R )
-!     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-!     !*      given the electron velocity v ( in A/fs )
-!     !*      and the lattice vectors describing the conventional unit cell A_cell
-!     !*      and a g-vector reflection
-!     !*      and a lattice type ( so that permitted reflections are found correctly )
-!     !*      and the tilt-stage orientation R which gives good 2 beam conditions
-!     !*      and the tilt-stage tweak R which rotates the crystal into a good dark field condition
-!             
-!             real(kind=real64),intent(in)                    ::      v
-!             real(kind=real64),dimension(3,3),intent(in)     ::      A_cell              !   lattice vectors of conventional unit cell
-!             integer,dimension(3),intent(in)                 ::      hkl
-!             real(kind=real64),intent(in)                    ::      xi0,xig,foil_thickness
-!             real(kind=real64),dimension(3,3),intent(in)     ::      U
-!             real(kind=real64),dimension(3,3),intent(inout)  ::      R
-!             
-!             
-!                         
-!             
-!             real(kind=real64)               ::      bg,b0,aa , ap 
-!             real(kind=real64)               ::      uu,up,k2,g2,kg , dd,kmod,alpha,beta
-!             integer                         ::      nn
-!             real(kind=real64),dimension(3,3)    ::      BB,RR
-!             real(kind=real64),dimension(3)      ::      kk,gg,xx,yy,zz
-!         
-!             character(len=16)                       ::      aaaa
-!             
-!         !----   compute g-vector in rotated frame. This will be close to [100], but not identical to it.
-!             call inverse3Mat(transpose(A_cell),BB) ; BB = 2*PI*BB                                              
-!             kk = reflection( BB, hkl )                                                                  
-!             RR = matmul( R,U )
-!             gg(1:3) = RR(1:3,1)*kk(1) + RR(1:3,2)*kk(2) + RR(1:3,3)*kk(3) 
-!             !print *,"gg = ",gg
-!             
-!             
-!             print *,"Lib_DiffractionConditions::tiltToDarkField() info - [hkl], g-vec in lab frame, g-vec after rotation"
-!             write (*,fmt='(i4,a,f12.5,a,f12.5)') hkl(1),"    ",kk(1),"    ",gg(1)
-!             write (*,fmt='(i4,a,f12.5,a,f12.5)') hkl(2),"    ",kk(2),"    ",gg(2)
-!             write (*,fmt='(i4,a,f12.5,a,f12.5)') hkl(3),"    ",kk(3),"    ",gg(3)
-!                 
-!         !---    propagation of electrons in perfect xtal
-!         !               
-!         !       d/dz (  phi_0 ) = i ( b0    bg      )
-!         !            (  phi_g )     ( bg    b0 + 2a )
-!         !            
-!             uu = energy_deviation_parameter( v,(/0.0d0,0.0d0,1.0d0/),gg )
-!             print *,"Lib_DiffractionConditions::tiltToDarkField info - deviation parameter (before) ",(HBAR*HBAR/(2*ME))*(2*kg + g2),uu," (eV) ",energyToLengthDeviationParameter( v,uu )," (1/A)"
-!             
-!         
-!             
-!             bg = PI/xig
-!             b0 = PI/xi0
-!             
-!             print *,"Lib_DiffractionConditions::tiltToDarkField() info - foil thickness   = ",foil_thickness
-!             uu = energy_deviation_parameter( v,(/0.0d0,0.0d0,1.0d0/),gg )
-!             aa = PI*energyToLengthDeviationParameter(v,uu)
-!              
-!             nn = maxval( (/ 0, nint( sqrt( aa*aa + bg*bg )*foil_thickness/PI ) , ceiling( foil_thickness*bg/PI ) /) )        
-!             print *,"Lib_DiffractionConditions::tiltToDarkField() info - n (DF)           = ",sqrt( aa*aa + bg*bg )*foil_thickness/PI,"->",nn
-!             ap = sign( sqrt( (nn*PI/foil_thickness)**2 - bg*bg ), aa )
-!              
-!             
-!              
-!              
-!              !print *,"Lib_DiffractionConditions::tiltToDarkField() info - a,a'           = ",aa,ap         
-!              uu = (bg*bg/(aa*aa + bg*bg)) * Sin( sqrt(aa*aa+bg*bg)*foil_thickness )**2
-!              print *,"Lib_DiffractionConditions::tiltToDarkField() info - |phi_g(z)^2|     =  ",uu," in good (n,ng) diffraction conditions"
-!           
-!              
-!         !---    k-vector in rotated frame is exactly parallel to [001], which may not be exactly down the zone axis.    
-!             kmod    = (ME*v/HBAR)       
-!             kk(1:3) = kmod*(/ 0,0,1 /)
-!            !    print *,"|k| ",kmod    
-!              
-!         !---    find desired deviation parameter            
-!             uu = -4*kmod*aa
-!             up = -4*kmod*ap
-!             k2 = kmod*kmod
-!             kg = kmod*gg(3)
-!             g2 = gg(1)*gg(1) + gg(2)*gg(2) + gg(3)*gg(3)
-!             
-!             
-!            !    print *,"2k.g + |g|^2 ", 2*kg + g2, uu ," -> ",up
-!                     
-!              
-!             dd = (kg*kg - g2*k2)
-!             !print *,"(kg*kg - g2*k2),k.g ",(kg*kg - g2*k2),kg
-!             alpha = sqrt( dd*(g2*g2 + up*up - 2*g2*(up + 2*k2)) )
-!             dd = 1/(2*dd)
-!             alpha = abs( alpha * dd )
-!             if (dd*kg>0) then                               
-!                 beta  = ( (up - g2)/2 + abs(kg)*alpha )/g2      !!
-!             else
-!                 beta  = ( (up - g2)/2 - abs(kg)*alpha )/g2
-!             end if
-!             
-!                             
-!             !print *," k -> alpha k + beta g ",alpha,beta
-!             
-!             kk = alpha*kk + beta*gg
-!             k2 = dd*dd
-!             kg = dot_product( kk,gg )
-!             !print *," |k| ",kmod,norm2(kk)
-!             
-!             uu = (HBAR*HBAR/(2*ME))*(2*kg + g2)
-!             zz = kk/norm2(kk)
-!             
-!             !
-!             aa = PI*energyToLengthDeviationParameter( v,uu )
-!             
-!             !print *,"half periods           ",sqrt( aa*aa + bg*bg )*foil_thickness/PI 
-!             uu = ( (bg*bg)/(aa*aa + bg*bg) ) * Sin( sqrt(aa*aa+bg*bg)*foil_thickness )**2
-!             print *,"Lib_DiffractionConditions::tiltToDarkField() info - |phi_g(z)|^2     =  ",uu," tilted to dark field"
-!             uu = ( (bg*bg)/(aa*aa + bg*bg) )
-!             print *,"Lib_DiffractionConditions::tiltToDarkField() info - max |phi_g|^2    =  ",uu
-!                   
-!             xx = gg - dot_product(gg,zz)*zz
-!             xx = xx/norm2(xx)
-!             yy = cross_product( zz,xx ) 
-!             RR(1:3,1) = xx
-!             RR(1:3,2) = yy
-!             RR(1:3,3) = zz
-!             
-!              print *,"Lib_DiffractionConditions::tiltToDarkField info - tilt rotation matrix to bring to dark field conditions"
-!              write (*,fmt='(3f12.5,a,3f12.5)') RR(1,:) 
-!              write (*,fmt='(3f12.5,a,3f12.5)') RR(2,:) 
-!              write (*,fmt='(3f12.5,a,3f12.5)') RR(3,:) 
-!              
-!              R = matmul(RR,R)
-!         
-!            
-!             print *,"Lib_DiffractionConditions::tiltToDarkField info - total rotation matrix to bring to (g,ng) dark field conditions"
-!             write (*,fmt='(3f12.5,a,3f12.5)') R(1,:) 
-!             write (*,fmt='(3f12.5,a,3f12.5)') R(2,:) 
-!             write (*,fmt='(3f12.5,a,3f12.5)') R(3,:) 
-!              
-!                 
-!             write(*,fmt='(a)',advance="no") "Lib_DiffractionConditions::tiltToDarkField info - foil tilt -D2BI_R "
-!             write(aaaa,fmt='(f16.12)') R(1,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!             write(aaaa,fmt='(f16.12)') R(2,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!             write(aaaa,fmt='(f16.12)') R(3,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!             write(aaaa,fmt='(f16.12)') R(1,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!             write(aaaa,fmt='(f16.12)') R(2,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!             write(aaaa,fmt='(f16.12)') R(3,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!             write(aaaa,fmt='(f16.12)') R(1,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!             write(aaaa,fmt='(f16.12)') R(2,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-!             write(aaaa,fmt='(f16.12)') R(3,3) ; write(*,fmt='(a)',advance="yes") trim(adjustl(aaaa)) 
-!             
-!             
-!             kk = reflection( BB, hkl )                                                      
-!             RR = matmul( R,U )                                      
-!             
-!          !   
-!          !   
-!          !   print *,"Lib_DiffractionConditions::tiltToDarkField info - total rotation matrix to bring to (g,ng) dark field conditions at k along zone axis"
-!          !   write (*,fmt='(3f12.5,a,3f12.5)') RR(1,:)  
-!          !   write (*,fmt='(3f12.5,a,3f12.5)') RR(2,:) 
-!          !   write (*,fmt='(3f12.5,a,3f12.5)') RR(3,:) 
-!          !    
-!          !   
-!          !   
-!          !   
-!          !   
-!          !   
-!          !   
-!          !   
-!          !                           
-!             gg(1:3) = RR(1:3,1)*kk(1) + RR(1:3,2)*kk(2) + RR(1:3,3)*kk(3)                   
-!             uu = energy_deviation_parameter( v,(/0.0d0,0.0d0,1.0d0/),gg )
-!             print *,"Lib_DiffractionConditions::tiltToDarkField info - deviation parameter (after) ",uu," (eV) ",energyToLengthDeviationParameter( v,uu )," (1/A)"
-!             
-!             !stop
-!             
-!             return
-!         end subroutine tiltToDarkField
-        
+!
         subroutine tiltToBrightField( v,A_cell, hkl , xi0,xig,foil_thickness,U, R )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      given the electron velocity v ( in A/fs )
@@ -988,7 +782,7 @@
             real(kind=real64)               ::      x1,x2,x3,y1,y2,y3
             logical                         ::      isConverged,isWithinTimeLimit
         
-            character(len=16)                       ::      aaaa
+!            character(len=16)                       ::      aaaa
             
             
             integer                             ::      nProcs,rank,ierror
@@ -1092,16 +886,16 @@
                ! write (*,fmt='(3f12.5,a,3f12.5)') R(3,:) 
                  
                     
-                write(*,fmt='(a)',advance="no") "Lib_DiffractionConditions::tiltToDarkField info - foil rotation -R "
-                write(aaaa,fmt='(f16.12)') R(1,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-                write(aaaa,fmt='(f16.12)') R(2,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-                write(aaaa,fmt='(f16.12)') R(3,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-                write(aaaa,fmt='(f16.12)') R(1,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-                write(aaaa,fmt='(f16.12)') R(2,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-                write(aaaa,fmt='(f16.12)') R(3,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-                write(aaaa,fmt='(f16.12)') R(1,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-                write(aaaa,fmt='(f16.12)') R(2,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
-                write(aaaa,fmt='(f16.12)') R(3,3) ; write(*,fmt='(a)',advance="yes") trim(adjustl(aaaa)) 
+                ! write(*,fmt='(a)',advance="no") "Lib_DiffractionConditions::tiltToDarkField info - foil rotation -R "
+                ! write(aaaa,fmt='(f16.12)') R(1,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
+                ! write(aaaa,fmt='(f16.12)') R(2,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
+                ! write(aaaa,fmt='(f16.12)') R(3,1) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
+                ! write(aaaa,fmt='(f16.12)') R(1,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
+                ! write(aaaa,fmt='(f16.12)') R(2,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
+                ! write(aaaa,fmt='(f16.12)') R(3,2) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
+                ! write(aaaa,fmt='(f16.12)') R(1,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
+                ! write(aaaa,fmt='(f16.12)') R(2,3) ; write(*,fmt='(a)',advance="no")  trim(adjustl(aaaa))//","
+                ! write(aaaa,fmt='(f16.12)') R(3,3) ; write(*,fmt='(a)',advance="yes") trim(adjustl(aaaa)) 
             end if            
             
             RU = matmul( R,U )                                                   
