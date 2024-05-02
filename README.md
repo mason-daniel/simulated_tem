@@ -38,8 +38,7 @@ cmake --build build --target install -j
 ```
 and check the build with
 ```
-cd build
-ctest
+cd build ; ctest ; cd ..
 ```
 The tests should all be very quick, with the final integration test taking a few seconds.
 
@@ -267,7 +266,7 @@ If the extinction distances file is not availiable, then just the values for the
 
 Use a simply calculated atomic density field to determine when the electron beam is passing through free space rather than crystal. 
 The atomic phase field is computed at each mesh point as the maximum value of 
-    $SmoothStep$\[ 2 - $d/\sigma$ ]$
+    $SmoothStep$\[ 2 - $d/\sigma$ ]
 where $d$ is the distance between an atom and the grid mesh point, and $\sigma=a_0/2$ is a characteristic lengthscale.
 
 #### \[-alterg]

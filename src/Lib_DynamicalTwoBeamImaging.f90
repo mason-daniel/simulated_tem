@@ -1009,6 +1009,7 @@
             !     call report(slerp(q1,q2,ng - floor(ng)),asRotMat=.true.)
             ! end if
             
+            if (rank==0) print *,"Lib_DynamicalTwoBeamImaging::setSupercellTilt1a info - final tilt"
             q1 = slerp(q1,q2,ng - floor(ng))        !   interpolate rotation between points for floor(ng) and ceiling(ng)
              
             this%R = quaternionToRotMat( q1 )
