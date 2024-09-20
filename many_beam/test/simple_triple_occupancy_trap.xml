@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<!DOCTYPE trap SYSTEM "${PALIOXIS_ROOT}/data/dtd/trap.dtd">
+<trap name="simple3" occupancy="3" xmlns:xi="http://www.w3.org/2001/XInclude">
+
+    <!--   bulk material W -->
+    <xi:include href="${PALIOXIS_ROOT}/data/tungsten/W.xml"/>
+    
+    <!--   mobile gas      -->
+    <xi:include href="${PALIOXIS_ROOT}/data/tungsten/gas/Heinola_interstitialH_in_W.xml"/>
+    
+    <reference>
+        A double occupancy trap with detrapping energies of 1.5, 1.0, 0.5 eV
+    </reference>    
+    
+    <formation_energy>
+        0.000
+       -0.605
+       -0.710
+       -0.315
+    </formation_energy>
+    
+    <zero_point_energy>
+        0
+        0.100
+        0.200
+        0.300
+    </zero_point_energy>
+
+    <rate_prefactors trapping="0.1667" detrapping="1"/>
+    
+</trap>

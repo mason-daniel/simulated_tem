@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+#   script to provide an input file for TDSfit.exe
+#   using Doyle-Turner coefficients read from a data table
+#
+#   infile.fitTDS.in [element].VVVV.TTTT [element]
+#
+echo "Fit/$1.dat" > Infile/infile.fit.in
+echo "Fit/$1.tds.fit.dat" >> Infile/infile.fit.in
+grep "$2" Input/DoyleTurnerCoefficients_a.dat | awk '{print $2 " " $3 " " $4 " " $5 " " $6}' >> Infile/infile.fit.in
+grep "$2" Input/DoyleTurnerCoefficients_b.dat | awk '{print $2 " " $3 " " $4 " " $5 " " $6}' >> Infile/infile.fit.in
+# echo "-0.0015 -0.0241 0.1119 0.0786 0.0194 " >> Infile/infile.fit.in
+# echo "0.0156 0.1104 0.4697 1.2869 3.7227"    >> Infile/infile.fit.in
+cat Infile/infile.fit.in

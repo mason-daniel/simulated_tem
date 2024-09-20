@@ -45,3 +45,6 @@ build/
 /src/Junk
 /install
 /Testing
+/DynamicalTwoBeam/bin
+/DynamicalTwoBeam/Fit
+/DynamicalTwoBeam/Input
