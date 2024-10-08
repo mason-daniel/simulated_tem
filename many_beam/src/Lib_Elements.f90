@@ -77,15 +77,15 @@
         public          ::      whichElement
         public          ::      DebyeWallerFactor
         public          ::      getLatticeConstant
-        public          ::      getMass
+        public          ::      getElementMass
         public          ::      getrealDoyleTurner_a
         public          ::      getrealDoyleTurner_b
         public          ::      getscatDoyleTurner_a
         public          ::      getscatDoyleTurner_b
 
 
-        interface       getMass
-            module procedure    getMass0
+        interface       getElementMass
+            module procedure    getElementMass0
         end interface
 
 
@@ -154,19 +154,19 @@
         end function getLatticeName0
 
 
-        pure real(kind=real64) function getMass0(el) 
+        pure real(kind=real64) function getElementMass0(el) 
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      return mass recorded for element
             character(len=*),intent(in)         ::      el
             integer         ::      ii
             ii = whichElement(el)
             if (ii /= 0) then
-                getMass0 = ELMASS(ii)
+                getElementMass0 = ELMASS(ii)
             else
-                getMass0 = 0.0d0
+                getElementMass0 = 0.0d0
             end if
             return
-        end function getMass0
+        end function getElementMass0
 
 
 

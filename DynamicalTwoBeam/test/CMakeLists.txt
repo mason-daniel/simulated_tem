@@ -37,6 +37,27 @@ set_tests_properties(Lib_InputTDS_test
     LABELS "SHORT"
     #ctest will look for "PASS" in the stdout and consider it a pass if it finds it
     PASS_REGULAR_EXPRESSION "PASS") 
+
+    
+add_executable(test_Lib_TDSfit test_Lib_TDSfit.f90)
+target_link_libraries(test_Lib_TDSfit CSF_Utils)
+add_test(NAME Lib_TDSfit_test COMMAND test_Lib_TDSfit)
+set_tests_properties(Lib_TDSfit_test
+    PROPERTIES
+    LABELS "SHORT"
+    #ctest will look for "PASS" in the stdout and consider it a pass if it finds it
+    PASS_REGULAR_EXPRESSION "PASS") 
+
+    
+add_executable(test_Lib_CrystalStructureFactor test_Lib_CrystalStructureFactor.f90)
+target_link_libraries(test_Lib_CrystalStructureFactor CSF_Utils)
+add_test(NAME Lib_CrystalStructureFactor_test COMMAND test_Lib_CrystalStructureFactor)
+set_tests_properties(Lib_CrystalStructureFactor_test
+    PROPERTIES
+    LABELS "SHORT"
+    #ctest will look for "PASS" in the stdout and consider it a pass if it finds it
+    PASS_REGULAR_EXPRESSION "PASS") 
+    
  
 add_executable(testcallipers testLib_Callipers.f90)
 target_link_libraries(testcallipers CSF_Utils )

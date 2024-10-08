@@ -22,6 +22,29 @@ target_include_directories(CommandLine
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 
+#Split utility code into its own lib
+add_library(CSF_Utils STATIC
+    Lib_GoldenSection.f90
+    Lib_RelativisticElectrons.f90
+    Lib_Elements.f90
+    Lib_Lattices.f90
+    Lib_Linint.f90    
+    Lib_FitDoyleTurner.f90
+    Lib_inputREAL.f90
+    Lib_REALfit.f90
+    Lib_inputTDS.f90
+    Lib_TDSfit.f90
+    Lib_CrystalStructureFactor.f90
+    )
+set_target_properties(CSF_Utils PROPERTIES 
+    Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/include)
+target_include_directories(CSF_Utils
+    PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+target_link_libraries(CSF_Utils CommandLine ${LAPACK_LIBRARIES})
+    
+    
     
 #Split utility code into its own lib
 add_library(ManyBeam_Utils STATIC
@@ -47,7 +70,7 @@ target_include_directories(ManyBeam_Utils
     PUBLIC
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-target_link_libraries(ManyBeam_Utils ${LAPACK_LIBRARIES})
+target_link_libraries(ManyBeam_Utils CSF_Utils CommandLine ${LAPACK_LIBRARIES})
     
     
      
@@ -58,6 +81,15 @@ target_link_libraries(ManyBeam_Utils ${LAPACK_LIBRARIES})
 
 #Copy libraries to the lib directory of
 #the install directory
+
+install(TARGETS CSF_Utils
+    EXPORT ${PROJECT_NAME}_Targets
+    ARCHIVE
+    DESTINATION lib
+    INCLUDES 
+    DESTINATION
+    include)
+    
 
 install(TARGETS ManyBeam_Utils
     EXPORT ${PROJECT_NAME}_Targets

@@ -35,7 +35,6 @@
         public      ::      getConventionalCell
         public      ::      getConventionalnMotif
         public      ::      getConventionalMotif
-        public      ::      getReciprocalLatticeVectors
         public      ::      getOmega0
         
         public      ::      getLatticeType
@@ -134,7 +133,6 @@
         
         interface report
             module procedure        report0
-            module procedure        report1
         end interface
         
         interface       clone
@@ -146,13 +144,6 @@
             module procedure        getNneighbours1
         end interface
             
-
-        interface getLatticeName
-            module procedure        getLatticeName0
-        end interface
-        
-        
-
         interface getOmega0
             module procedure        getOmega00
         end interface
@@ -164,38 +155,11 @@
         interface   getConventionalCell
             module procedure        getConventionalCell0
         end interface
-
-        interface   getReciprocalLatticeVectors
-            module procedure        getReciprocalLatticeVectors0
-        end interface
         
         interface   getLatticeType
             module procedure        getLatticeType0
             module procedure        getLatticeType1
         end interface
-
-        
-        interface MillerToMillerBravais_direction
-            module procedure        MillerToMillerBravais_direction0
-            module procedure        MillerToMillerBravais_direction1
-        end interface
-        
-        interface MillerBravaisToMiller_direction
-            module procedure        MillerBravaisToMiller_direction0
-            module procedure        MillerBravaisToMiller_direction1
-        end interface
-        
-        interface MillerToMillerBravais_plane
-            module procedure        MillerToMillerBravais_plane0
-            module procedure        MillerToMillerBravais_plane1
-        end interface
-        
-        interface MillerBravaisToMiller_plane
-            module procedure        MillerBravaisToMiller_plane0
-            module procedure        MillerBravaisToMiller_plane1
-        end interface
-
-        
          
     contains
 !---^^^^^^^^
@@ -397,44 +361,11 @@
     !*      optional argument o determines left hand margin    
             type(Lattice),intent(in)        ::      this
             integer,intent(in),optional     ::      u,o
-            integer     ::      uu,oo!,ii,kk
+            integer     ::      uu,oo,ii,kk
             uu = 6 ; if (present(u)) uu = u
             oo = 0 ; if (present(o)) oo = o
             write(unit=uu,fmt='(3(a,i4))') repeat(" ",oo)//"Lattice ["//LATTICE_NAME(this%latt)//","//SYMMETRY_NAME(this%sym)//",nMotif=",this%nMotif,",nNeigh(max)=",maxval(this%nNeighbours),"]"
             
-            ! write (unit=uu,fmt='(a)',advance="no") repeat(" ",oo+4)
-            ! do ii = 1,this%nMotif
-            !     write (unit=uu,fmt='(a4,a18,i2,a3)',advance="no") "","neighbours, motif ",ii," "
-            ! end do
-            ! write (unit=uu,fmt='(a)',advance="yes") ""
-            ! do kk = 1,maxval(this%nNeighbours)
-            !     write (unit=uu,fmt='(a)',advance="no") repeat(" ",oo+4)
-            !     do ii = 1,this%nMotif
-            !         if (kk<=this%nNeighbours(ii)) then      !   if one motif point has fewer neighbours, write a blank space
-            !             write (unit=uu,fmt='(3f8.3)',advance="no") this%neighbour(:,kk,ii)
-            !         else
-            !             write (unit=uu,fmt='(a24)',advance="no")  ""
-            !         end if                    
-            !         if (ii<this%nMotif)  write (unit=uu,fmt='(a)',advance="no") " , "                
-            !     end do
-            !     write (unit=uu,fmt='(a)',advance="yes") ""
-            ! end do
-            return
-        end subroutine report0
-    
-    
-        subroutine report1(this,verbose,u,o)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      simple output. Defaults to unit 6 = screen.
-    !*      optional argument o determines left hand margin    
-            type(Lattice),intent(in)        ::      this
-            logical,intent(in)              ::      verbose
-            integer,intent(in),optional     ::      u,o
-            integer     ::      uu,oo,ii,kk
-            uu = 6 ; if (present(u)) uu = u
-            oo = 0 ; if (present(o)) oo = o
-            call report0(this,uu,oo)
-            if (.not. verbose) return
             write (unit=uu,fmt='(a)',advance="no") repeat(" ",oo+4)
             do ii = 1,this%nMotif
                 write (unit=uu,fmt='(a4,a18,i2,a3)',advance="no") "","neighbours, motif ",ii," "
@@ -453,7 +384,7 @@
                 write (unit=uu,fmt='(a)',advance="yes") ""
             end do
             return
-        end subroutine report1
+        end subroutine report0
     
     !---
         
@@ -502,53 +433,16 @@
         end function getMotif0
         
 
-        pure function getConventionalMotif(this,i,removeOffset) result(c)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      returns the motif points in the conventional cell
-    !*      by default adds a [1/4,1/4,1/4] offset to atomic positions
-    !*      but can optionally switch this off
+        pure function getConventionalMotif(this,i) result(c)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+    !*      returns the motif points in the primitive unit cell
+    !*      note that the motif points in the conventional cell might be different
 
             type(Lattice),intent(in)                            ::      this
-            integer,intent(in)                                  ::      i
-            logical,intent(in),optional                         ::      removeOffset
+           integer,intent(in)                                   ::      i
             real(kind=real64),dimension(3)                      ::      c
             
-            if (present(removeOffset)) then
-                if (removeOffset) then
-
-                    select case(this%latt)
-                        case(LATTICE_BCC)
-                            select case(i)
-                                case(1)
-                                    c = (/ 0.00d0,0.00d0,0.00d0 /)
-                                case(2)
-                                    c = (/ 0.50d0,0.50d0,0.50d0 /)
-                            end select   
-                        case(LATTICE_FCC)
-                            select case(i)
-                                case(1)
-                                    c = (/ 0.00d0,0.00d0,0.00d0 /)
-                                case(2)
-                                    c = (/ 0.00d0,0.50d0,0.50d0 /)
-                                case(3)
-                                    c = (/ 0.50d0,0.00d0,0.50d0 /)
-                                case(4)
-                                    c = (/ 0.50d0,0.50d0,0.00d0 /)
-                            end select   
-                        case(LATTICE_HCP)
-                            select case(i)
-                                case(1)
-                                    c =  (/ 0.00d0,0.00d0,0.00d0 /)
-                                case(2)
-                                    c = (/ 2,4,3 /)/6.0d0
-                            end select   
-                        case default
-                            c = 0.0d0
-                    end select
-                    return
-                end if
-            end if
-
+            c = 0.5d0
             select case(this%latt)
                 case(LATTICE_BCC)
                     select case(i)
@@ -574,9 +468,14 @@
                             c = (/ 1,1,1 /)/12.0d0
                         case(2)
                             c = (/ 5,9,7 /)/12.0d0
+!                         case(3)
+!                             c = (/ 4,2,4 /)/6.0d0
+!                         case(4)
+!                             c = (/ 1,5,4 /)/6.0d0
                      end select   
+                    !c = reshape( (/1,1,1 , 4,4,1 , 4,2,4  , 1,5,4 /) , (/3,4/) )/6.0d0
                 case default
-                    c = 0.25d0
+                    c = 0.5d0
             end select
              
             return
@@ -669,14 +568,14 @@
             return
         end function getSymmetryName
 
-        function getLatticeName0( this ) result(name)
+        function getLatticeName( this ) result(name)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      find name of lattice from type
             type(Lattice),intent(in)        ::      this
             character(len=6)                ::      name
             name = LATTICE_NAME(this%latt)
             return
-        end function getLatticeName0
+        end function getLatticeName
         
         function getLatticeType0( lattice ) result(latticeType)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -893,132 +792,7 @@
         end subroutine setCoverA
             
         
-        pure function MillerBravaisToMiller_direction0( uvtw ) result( uvw )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      HCP specific routine
-    !       The HCP primitivelattice vectors 
-    !       PRIMITIVE_HCP = reshape( (/  0.5d0,-sqrt(0.75d0),0.0d0 , 0.5d0,sqrt(0.75d0),0.0d0 , 0.0d0,0.0d0,sqrt(8.0d0/3)  /) , (/3,3/) ) 
-    !           a1 =  (/ 0.5d0,-sqrt(0.75d0),0.0d0 /)
-    !           a2 =  (/ 0.5d0,+sqrt(0.75d0),0.0d0 /)
-    !           a3 =  - a1 - a2  =  (/ 1.0d0,0.0d0,0.0d0 /)
-    !           c  =  (/ 0.0d0,0.0d0,1.0d0 /)
-    !
-    !       so to get a 3-vector out of 4 miller indices 
-    !           x = M [uvtw] = A [uvw]
-    !       with
-    !           M = (   a1  a2  a3      0   )     A = (   a1  a2  a3  )
-    !               (   |   |   |       0   )         (   |   |   |   )
-    !               (   |   |   |       1   )         (   |   |   |   )
-    !    
-    !       so 
-    !           [uvw] = A^-1 M [ uvtw ]
-    !
-    !                 = ( 1  0 -1  0 )
-    !                   ( 0  1 -1  0 )
-    !                   ( 0  0  0  1 )
-     
-    
-            integer,dimension(4),intent(in)   ::      uvtw
-            integer,dimension(3)              ::      uvw
- 
-            uvw(1) = uvtw(1) - uvtw(3)     
-            uvw(2) = uvtw(2) - uvtw(3)     
-            uvw(3) = uvtw(4)     
-            
-            
-            return
-        end function MillerBravaisToMiller_direction0                     
-                    
-        
-        
-        pure function MillerToMillerBravais_direction0( uvw ) result( uvtw )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      HCP specific routine
-    !       The HCP primitivelattice vectors 
-    !       PRIMITIVE_HCP = reshape( (/  0.5d0,-sqrt(0.75d0),0.0d0 , 0.5d0,sqrt(0.75d0),0.0d0 , 0.0d0,0.0d0,sqrt(8.0d0/3)  /) , (/3,3/) ) 
-    !           a1 =  (/ 0.5d0,-sqrt(0.75d0),0.0d0 /)
-    !           a2 =  (/ 0.5d0,+sqrt(0.75d0),0.0d0 /)
-    !           a3 =  - a1 - a2  =  (/ 1.0d0,0.0d0,0.0d0 /)
-    !           c  =  (/ 0.0d0,0.0d0,1.0d0 /)
-    !
-    !       so to get a 3-vector out of 4 miller indices 
-    !           x = M [uvtw] = A [uvw]
-    !       with
-    !           M = (   a1  a2  a3      0   )     A = (   a1  a2  a3  )
-    !               (   |   |   |       0   )         (   |   |   |   )
-    !               (   |   |   |       1   )         (   |   |   |   )
-    !    
-    !       so 
-    !           [uvw] = A^-1 M [ uvtw ]
-    !
-    !                 = ( 1  0 -1  0 )
-    !                   ( 0  1 -1  0 )
-    !                   ( 0  0  0  1 )
-     
-    
-            integer,dimension(3),intent(in)   ::      uvw
-            integer,dimension(4)              ::      uvtw
- 
-            uvtw(1) = ( 2*uvw(1) - uvw(2))/3
-            uvtw(2) = (-uvw(1) + 2*uvw(2))/3
-            uvtw(3) = (-uvw(1)   - uvw(2))/3
-            uvtw(4) = uvw(3)     
-            
-            
-            return
-        end function MillerToMillerBravais_direction0                     
-                    
-        pure function MillerBravaisToMiller_plane0( hkil ) result( hkl )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      HCP specific routine
-    !
-    !       if a plane is defined by  d = [hkl].[uvw]
-    !       then  
-    !           d = [hkl]. ( 1  0 -1  0 ) [uvtw]
-    !                      ( 0  1 -1  0 )
-    !                      ( 0  0  0  1 )
-    !        so
-    !           [hkil] = (  1  0  0 ) [hkl]
-    !                    (  0  1  0 )
-    !                    ( -1 -1  0 )
-    !                    (  0  0  1 )
-    !       left-inverse to give
-    !                                    
-    !           [hkl]  = (  1  0  0  0 ) [hkil]
-    !                    (  0  1  0  0 )
-    !                    (  0  0  0  1 )
-    
-            integer,dimension(4),intent(in)   ::      hkil
-            integer,dimension(3)              ::      hkl
- 
-            hkl(1) = hkil(1) 
-            hkl(2) = hkil(2)  
-            hkl(3) = hkil(4)     
-                        
-            return
-        end function MillerBravaisToMiller_plane0                     
-                    
-        
-        
-        pure function MillerToMillerBravais_plane0( hkl ) result( hkil )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      HCP specific routine
-    
-            integer,dimension(3),intent(in)   ::      hkl
-            integer,dimension(4)              ::      hkil
- 
-            hkil(1) = hkl(1)
-            hkil(2) = hkl(2)
-            hkil(3) = (-hkl(1) - hkl(2))
-            hkil(4) = hkl(3)     
-            
-            
-            return
-        end function MillerToMillerBravais_plane0                     
-                    
-        
-        
-        pure function MillerBravaisToMiller_direction1( uvtw ) result( uvw )
+        pure function MillerBravaisToMiller_direction( uvtw ) result( uvw )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      HCP specific routine
     !       The HCP primitivelattice vectors 
@@ -1052,11 +826,11 @@
             
             
             return
-        end function MillerBravaisToMiller_direction1                     
+        end function MillerBravaisToMiller_direction                     
                     
         
         
-        pure function MillerToMillerBravais_direction1( uvw ) result( uvtw )
+        pure function MillerToMillerBravais_direction( uvw ) result( uvtw )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      HCP specific routine
     !       The HCP primitivelattice vectors 
@@ -1091,9 +865,9 @@
             
             
             return
-        end function MillerToMillerBravais_direction1                     
+        end function MillerToMillerBravais_direction                     
                     
-        pure function MillerBravaisToMiller_plane1( hkil ) result( hkl )
+        pure function MillerBravaisToMiller_plane( hkil ) result( hkl )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      HCP specific routine
     !
@@ -1121,11 +895,11 @@
             hkl(3) = hkil(4)     
                         
             return
-        end function MillerBravaisToMiller_plane1                     
+        end function MillerBravaisToMiller_plane                     
                     
         
         
-        pure function MillerToMillerBravais_plane1( hkl ) result( hkil )
+        pure function MillerToMillerBravais_plane( hkl ) result( hkil )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      HCP specific routine
     
@@ -1139,7 +913,7 @@
             
             
             return
-        end function MillerToMillerBravais_plane1                     
+        end function MillerToMillerBravais_plane                     
                     
         
         
@@ -1177,20 +951,6 @@
              
             return
         end function getConventionalCell0
-
-        pure function getReciprocalLatticeVectors0(this) result(B)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      return reciprocal lattice vectors as a 3x3 matrix B
-    !*      where B_ij is the ith Cartesian component of the jth vector
-    !*      note: not scaled by lattice parameter
-            type(Lattice),intent(in)                    ::      this             
-            real(kind=real64),dimension(3,3)            ::      B
-            real(kind=real64),dimension(3,3)            ::      C
-            C = getConventionalCell0(this)
-            call inverse3Mat(transpose(C),B) 
-            B = 2*PI*B  
-            return
-        end function getReciprocalLatticeVectors0
 
         pure function getPrimitiveCell( this ) result(b)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -115,20 +115,22 @@
         character(len=1),dimension(3),parameter     ::  XYZFILE_COMMENT = (/ "#","%","!" /)     !   line treated as comment if starts with this character
         
         
-        integer,private,parameter       ::      XYZFILE_NATOMSIDBYMASS = 20
+        integer,private,parameter       ::      XYZFILE_NATOMSIDBYMASS = 54
         character(len=2),dimension(XYZFILE_NATOMSIDBYMASS),private,parameter        ::    XYZFILE_ATOMSIDBYMASS_NAME = (/   & 
-                                                                "H ","D ","T ","He",                                        &
-                                                                "C ","N ","O ","Si","P ",                                   &
-                                                                "V ","Cr","Mn","Fe","Ni","Cu",                              &
-                                                                "Zr","Mo",                                                  &
-                                                                "Ta","W ","Re"                                          /)
+                        "H ","D ","T ","He"                                         &
+                       ,'Li','Be','C ','O ','Na','Mg','Al','Si','K '                    &
+                       ,'Ca','Ti','V ','Cr','Mn','Fe','Co','Ni','Cu','Zn','Ga','Ge'     &
+                       ,'As','Rb','Sr','Y ','Zr','Nb','Mo','Ru','Rh','Pd','Ag','Cd'     &
+                       ,'Sn','Cs','Ba','La','Ce','Gd','Hf','Ta','W ','Re','Os','Ir'     &
+                       ,'Pt','Au','Tl','Pb','Th' /)  
                
         real(kind=real64),dimension(XYZFILE_NATOMSIDBYMASS),private,parameter       ::    XYZFILE_ATOMSIDBYMASS_MASS = (/   &
-                                                                1.0 , 2.0 , 3.0 , 4.003,                                    &
-                                                                12.01 ,14.01 ,16.00 ,28.09 ,30.97 ,                         &
-                                                                50.94 ,52.00 ,54.94 ,55.84 ,58.69 ,                         &
-                                                                63.55 ,91.22 ,95.94 ,                                       &
-                                                                180.95,183.84,186.21                                    /)
+                        1.0d0 , 2.0d0 , 3.0d0 , 4.003d0                                     &
+                        ,7.0d0,9.012183d0,12.011d0,15.999d0,22.9897693d0,24.305d0,26.981538d0,28.085d0,39.0983d0                                 &
+                        ,40.08d0,47.867d0,50.9415d0,51.996d0,54.93804d0,55.84d0,58.93319d0,58.693d0,63.55d0,65.4d0,69.723d0,72.63d0              &
+                        ,74.92159d0,85.468d0,87.62d0,88.90584d0,91.22d0,92.90637d0,95.95d0,101.1d0,102.9055d0,106.42d0,107.868d0,112.41d0        &
+                        ,118.71d0,132.9054520d0,137.33d0,138.9055d0,140.116d0,157.2d0,178.49d0,180.9479d0,183.84d0,186.207d0,190.2d0,192.22d0    &
+                        ,195.08d0,196.96657d0,204.383d0,207d0,232.038d0  /)
         
         logical,public      ::      LIBXYZ_DBG = .false.                                                                            
         integer,public,parameter      ::      LIBXYZ_COL_STRING = 0

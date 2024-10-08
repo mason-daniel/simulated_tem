@@ -25,12 +25,14 @@
         use Lib_FactoriseParallel
         use Lib_ComputePhaseFactor
         use Lib_ManyBeam
-        use Lib_XYZFiles
+        use Lib_XYZFiles 
         use NBAX_StringTokenizers
         use Lib_RelativisticElectrons
         use Lib_RotationMatrices
+        use Lib_Elements
         use Lib_ReadExtinctionDistances
         use Lib_DeformationGradients
+        use Lib_CrystalStructureFactor
 #ifdef MPI
         use mpi_f08
 #endif
@@ -74,6 +76,7 @@
         interface       IntegrateManyBeams_ctor
             module procedure            IntegrateManyBeams_null
             module procedure            IntegrateManyBeams_ctor0
+            module procedure            IntegrateManyBeams_ctor1
         end interface
 
         interface       report
@@ -121,7 +124,7 @@
             real(kind=real64),intent(in)                ::      V                       !   accelerating voltage (keV)
             integer,intent(in)                          ::      nPrec                   !   number of many beam copies to use for precession
             real(kind=real64),intent(in),optional       ::      theta                   !   precession angle
-            type(IntegrateManyBeams)          ::      this
+            type(IntegrateManyBeams)                    ::      this
 
             real(kind=real64),dimension(3,3)        ::      dfg_bar             !   average deformation gradient, used to fix correct positions of the g-vectors
             real(kind=real64),dimension(3,3)        ::      RR                  !   precession rotation matrix
@@ -152,6 +155,74 @@
  
             return
         end function IntegrateManyBeams_ctor0
+
+
+        function IntegrateManyBeams_ctor1( element, latticename,a0_in,filename,T,V,nPrec,theta ) result(this)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                     
+    !*      default constructor
+            character(len=*),intent(in)                 ::      element                 !   name of element
+            character(len=*),intent(in)                 ::      latticename             !   eg "bcc" the name of the lattice type 
+            real(kind=real64),dimension(3),intent(in)   ::      a0_in                   !   lattice parameter(s)
+            character(len=*),intent(in)                 ::      filename                !   atom position file
+            real(kind=real64),intent(in)                ::      T                       !   temperature (K)
+            real(kind=real64),intent(in)                ::      V                       !   accelerating voltage (kV)
+            integer,intent(in)                          ::      nPrec                   !   number of many beam copies to use for precession
+            real(kind=real64),intent(in)                ::      theta                   !   precession angle
+            type(IntegrateManyBeams)                    ::      this
+
+            real(kind=real64),dimension(3,3)        ::      dfg_bar             !   average deformation gradient, used to fix correct positions of the g-vectors
+            real(kind=real64),dimension(3,3)        ::      RR                  !   precession rotation matrix
+            integer                                 ::      mm
+            real(kind=real64),dimension(3)          ::      kk                  !   electgron beam vector
+            real(kind=real64)                       ::      dphi
+            integer                                 ::      nG                  !   number of g-vectors tracked
+            integer,dimension(:,:),allocatable      ::      hkl                 !   reflections
+            complex(kind=real64),dimension(:),allocatable   ::      Vg          !   crystal structure factor
+            integer                                 ::      ii
+
+            this = IntegrateManyBeams_null()
+
+            call setLattice( this,a0_in,latticename,rho_in=2.0d0 )  
+
+
+
+            if (rank==0) print *,"Lib_IntegrateManyBeams::IntegrateManyBeams_ctor1 info - computing crystal structure factors"
+            nG = getn(this%gv)
+            allocate(this%xi(0:nG))
+            allocate(hkl(3,0:nG))
+            hkl(:,0) = 0
+            do ii = 1,nG
+                hkl(:,ii) =  gethkl(this%gv,ii)
+            end do
+            allocate(Vg(0:nG))
+            call computeCrystalStructureFactors( element,hkl, T,V*1000.0d0, Vg )       !    note computeCrystalStructureFactors wants accelerator voltage in V not kV.
+            do ii = 0,nG
+                this%xi(ii) = PI * HBAR * velocity( V ) / Vg(ii)
+            end do
+            if (rank==0) print *,""
+
+
+            !call readXifile(this,xifilename)
+            call readInputXyzFile( this,filename,dfg_bar )    
+            call setR(this%gv,dfg_bar)    
+            this%nPrec = max(1,nPrec)
+            allocate(this%mb(this%nPrec))
+            kk = (/0,0,1/) * ME * velocity( V/1000 )/ HBAR     
+            this%mb(1) = ManyBeam_ctor(kk,this%gv,this%xi)
+            if (this%nPrec > 1) then
+                !   precession
+                dphi = 2*PI / (this%nPrec-1)
+                do mm = 2,this%nPrec
+                    RR = RotationMatrix_ctor( (/0.0d0,1.0d0,0.0d0/),theta )                      !   rotation about y axis by angle theta
+                    RR = matmul( RotationMatrix_ctor( (/0.0d0,0.0d0,1.0d0/),(mm-2)*dphi ),RR )   !   rotation about z axis by angle phi 
+                    this%mb(mm) = ManyBeam_ctor( matmul(RR,kk),this%gv,this%xi )
+                end do
+            end if
+            call setImagingSpace(this)                        
+            call computePhaseFields(this)                     
+ 
+            return
+        end function IntegrateManyBeams_ctor1
 
 
 
@@ -255,6 +326,10 @@
             if (rank==0) print *,""
             return
         end subroutine setLattice
+ 
+
+
+
 
         subroutine readXifile(this,xifilename)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -288,15 +363,19 @@
             return
         end subroutine readXifile
 
-        subroutine readInputXyzFile( this,filename,dfg_bar )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+
+
+        subroutine readInputXyzFile( this,filename,dfg_bar,element )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      reads in the atom positions ( shared by all processes )
     !*      and establishes the AtomSpace
     !*      returns the average deformation gradient
      
-            type(IntegrateManyBeams),intent(inout)          ::      this
-            character(len=*),intent(in)                     ::      filename
-            real(kind=real64),dimension(3,3),intent(inout)  ::      dfg_bar
+            type(IntegrateManyBeams),intent(inout)              ::      this
+            character(len=*),intent(in)                         ::      filename
+            real(kind=real64),dimension(3,3),intent(inout)      ::      dfg_bar
+            character(len=XYZFILE_ATOMNAMELENGTH),intent(out),optional   ::      element
 
             type(XYZFile)       ::      xyz
             logical             ::      ok
@@ -307,6 +386,8 @@
             integer,dimension(:),allocatable        ::  nGrain
             real(kind=real64),dimension(3,3)    ::      eps_bar,rot_bar,dfg
             real(kind=real64)                   ::      weight
+            integer,dimension(:),pointer        ::      tt
+            integer                             ::      mostPopType,nTypeMax
 
             if (rank==0) print *,"Lib_IntegrateManyBeams::readInputXyzFile info"
 
@@ -368,15 +449,34 @@
                         !dfg_bar = reshape( (/1,0,0,0,1,0,0,0,1/),(/3,3/))
                     end if
 
+                !---    attempt to id the most populous element
+                    if (present(element)) then
+                        call getTypesp(xyz,tt)
+                        nTypeMax = -huge(1) 
+                        mostPopType = 1
+                        do ii = 1,getnAtomNames(xyz)
+                            kk = count(tt == ii)
+                            if (kk>nTypeMax) then
+                                mostPopType = ii
+                                nTypeMax = kk
+                            end if
+                        end do
+                        element = getAtomName(xyz,mostPopType)
+                        print *,"Lib_IntegrateManyBeams::readInputXyzFile info - most common atom type """//trim(element)//""""
+                    end if
+            
+
                 else
                     print *,"Lib_IntegrateManyBeams::readInputXyzFile error - could not read file header"
                 end if  !   header read ok
                 print *,""
+                
             end if  !   rank 0
 #ifdef MPI            
             call MPI_BCAST(ok,1,MPI_LOGICAL,0,MPI_COMM_WORLD,ii)
             if (.not. ok) call errorExit("readInputXyzFile ERROR - could not read file """//trim(filename)//"""")
             call MPI_BCAST(this%nAtoms,1,MPI_INTEGER,0,MPI_COMM_WORLD,ii)
+            if (present(element)) call MPI_BCAST(element,XYZFILE_ATOMNAMELENGTH,MPI_CHARACTER,0,MPI_COMM_WORLD,ii)
             if (rank/=0) allocate(this%r(3,this%nAtoms))
             call MPI_BCAST(this%r(1:3,1:this%nAtoms),3*this%nAtoms,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ii)                
             call MPI_BCAST(a_super,9,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ii)

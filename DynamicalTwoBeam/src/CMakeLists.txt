@@ -25,14 +25,16 @@ target_include_directories(CommandLine
     
 #Split utility code into its own lib
 add_library(CSF_Utils STATIC
+    Lib_GoldenSection.f90
     Lib_RelativisticElectrons.f90
     Lib_Elements.f90
     Lib_Lattices.f90
-    Lib_Linint.f90
-    DebyeWallerFactor.f90
+    Lib_Linint.f90    
+    Lib_FitDoyleTurner.f90
     Lib_inputREAL.f90
     Lib_REALfit.f90
     Lib_inputTDS.f90
+    Lib_TDSfit.f90
     Lib_CrystalStructureFactor.f90
     )
 set_target_properties(CSF_Utils PROPERTIES 
