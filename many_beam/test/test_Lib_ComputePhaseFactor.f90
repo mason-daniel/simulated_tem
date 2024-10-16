@@ -15,7 +15,7 @@
         use iso_fortran_env
         implicit none
 
-        integer,parameter                               ::      MX = 50,MY = 40, MZ = 30
+        integer,parameter                               ::      MX = 20,MY = 30, MZ = 30
         integer,parameter                               ::      NATOMS = MX*MY*MZ*2
         integer,parameter                               ::      NG = 4
         real(kind=real64),parameter                     ::      PI = 3.14159265390d0
@@ -41,9 +41,9 @@
         integer,dimension(2,3)                          ::      bb
         real(kind=real64),dimension(3,NG)               ::      g
         complex(kind=real64),dimension(:,:,:,:),pointer      ::      x       !   (1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
-        complex(kind=real64),dimension(:,:,:,:,:),pointer    ::      gradx       !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
+        real(kind=real64),dimension(:,:,:,:,:),pointer    ::      grad_arg_x       !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
         real(kind=real64),dimension(:,:,:),pointer      ::      rho
-        real(kind=real64),dimension(6)                  ::      dat
+        real(kind=real64),dimension(12)                  ::      dat
         integer                                         ::      ix,iy,iz
 
         
@@ -147,14 +147,19 @@
     !---    find region I am responsible for, _excluding_ buffers
         call getBounds(is,bb)
 
-        allocate(x(NG,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))
+        !allocate(x(NG,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))
         allocate(rho(bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))        
-        allocate(gradx(3,NG,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))
+        allocate(grad_arg_x(3,NG,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))
+        allocate(x(NG,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))        
         !print *,"rank ",rank," start computePhaseFactor"
 
-        !Lib_ComputePhaseFactor_DBG = .true.
+        Lib_ComputePhaseFactor_DBG = .true.
         timer = Callipers_ctor()
-        call computePhaseFactor( myNatoms,myrt,g, is,x,gradx,rho )
+        call computePhaseFactor( myNatoms,myrt,g, is,grad_arg_x,rho,x )
+        print *,"bounds x ",lbound(grad_arg_x,dim=3),lbound(rho,dim=1),lbound(x,dim=2) , ":" , ubound(grad_arg_x,dim=3),ubound(rho,dim=1),ubound(x,dim=2)
+        print *,"bounds y ",lbound(grad_arg_x,dim=4),lbound(rho,dim=2),lbound(x,dim=3) , ":" , ubound(grad_arg_x,dim=4),ubound(rho,dim=2),ubound(x,dim=3)
+        print *,"bounds z ",lbound(grad_arg_x,dim=5),lbound(rho,dim=3),lbound(x,dim=4) , ":" , ubound(grad_arg_x,dim=5),ubound(rho,dim=3),ubound(x,dim=4)
+
         call pause(timer)
         t_phaseField = elapsed(timer)
 #ifdef MPI
@@ -169,8 +174,8 @@
 
         if (rank==0) then
             print *,"derivative test ",bb
-            print *,"gradx(g=1,1,1,1)  ",gradx(:,1,1,1,1)
-            print *,"numerical         ",( x(1,2,1,1)-x(1,0,1,1) )/(2*a),( x(1,1,2,1)-x(1,1,0,1) )/(2*a),( x(1,1,1,2)-x(1,0,1,0) )/(2*a)
+            print *,"grad_arg_x(g=1,1,1,1)  ",grad_arg_x(:,1,1,1,1)
+            !print *,"numerical         ",( x(1,2,1,1)-x(1,0,1,1) )/(2*a),( x(1,1,2,1)-x(1,1,0,1) )/(2*a),( x(1,1,1,2)-x(1,0,1,0) )/(2*a)
         end if
 
         !print *,"rank ",rank," done computePhaseFactor"
@@ -179,10 +184,10 @@
             write(filename,fmt='(i6)') rank ; filename = "test.p"//trim(adjustl(filename))//".xyz"
             xyz = XYZFile_ctor(filename)
             call setAtomNames(xyz,(/"int","buf","g.r"/))
-            call setnAtoms(xyz,mynAtoms+size(x,dim=2)*size(x,dim=3)*size(x,dim=4))
-            call setColumn_Description(xyz,Nx,Ny,Nz,RotationMatrix_identity,":Re(x):R:1:Im(x):R:1:rho:R:1" )
+            call setnAtoms(xyz,mynAtoms+size(rho,dim=1)*size(rho,dim=2)*size(rho,dim=3))
+            call setColumn_Description(xyz,Nx,Ny,Nz,RotationMatrix_identity,":grad_arg(x):R:3:rho:R:1:Re(x):R:1:Im(x):R:1" )
             call setnHeaderLines(xyz,0)
-            call setnColumns(xyz,6)
+            call setnColumns(xyz,9)
             dat = 0
             do ii = 1,mynAtoms
                 if (inMyCell(is,myrt(:,ii),buffered=.false.)) then
@@ -200,10 +205,12 @@
                         ii = ii + 1
                         call setAtomType(xyz,ii,3)
                         dat(1:3) = (/ ix,iy,iz /) + 0.5d0              !   +0.5 because x nodes are at (1/2,1/2,1/2) positions
-                        dat(4) = real( x(2,ix,iy,iz),kind=real64 )
-                        dat(5) = aimag( x(2,ix,iy,iz) )
-                        dat(6) = rho(ix,iy,iz)
-                        call setColumns(xyz,ii,dat)
+                        dat(4:6) = grad_arg_x(:,1,ix,iy,iz)
+                        !dat(5) = aimag( x(2,ix,iy,iz) )
+                        dat(7) = rho(ix,iy,iz)
+                        dat(8) = real(x(1,ix,iy,iz))
+                        dat(9) = aimag(x(1,ix,iy,iz))
+                        call setColumns(xyz,ii,dat(1:9))
                     end do
                 end do
             end do

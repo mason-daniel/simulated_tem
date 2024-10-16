@@ -4,6 +4,7 @@
 !*      
         use iso_fortran_env
         use Lib_Lattices
+        use Lib_Elements
         use Lib_XYZFiles
         use Lib_IntegrateManyBeams
         use Lib_CommandLineArguments
@@ -22,8 +23,9 @@
         type(CommandLineArguments)      ::      cla
         
         character(len=256)              ::      filename = ""           !   input filename
-        character(len=256)              ::      xifilename = ""             !   input extinction distance filename
-        character(len=8)                ::      latticename = "bcc"
+!        character(len=256)              ::      xifilename = ""             !   input extinction distance filename
+        character(len=8)                ::      latticename = UNKNOWN_LATTICE
+        real(kind=real64)               ::      T = 300.0d0             !   temperature (K)
         real(kind=real64)               ::      V = 200.0d0             !   accelerator voltage (kV)
         real(kind=real64),dimension(3)  ::      a0_in = 3.0             !   indicative lattice parameter (A)
         integer                         ::      nPrec = 1               !   precession angles
@@ -62,8 +64,9 @@
           
         
         call get( cla,"f",filename ,LIB_CLA_REQUIRED,"          input filename" )                                                                  
-        call get( cla,"xi",xifilename ,LIB_CLA_REQUIRED,"         extinction distance input filename" )                                                        
+!        call get( cla,"xi",xifilename ,LIB_CLA_REQUIRED,"         extinction distance input filename" )                                                        
         call get( cla,"lattice",latticename ,LIB_CLA_OPTIONAL,"  lattice type" )                                                        
+        call get( cla,"T",T ,LIB_CLA_OPTIONAL,"   temperature (K)" )                                                        
         call get( cla,"V",V ,LIB_CLA_OPTIONAL,"   accelerating voltage (kV)" )                                                        
         ii=0
         call get( cla,"a0",a0_in,ii ,LIB_CLA_REQUIRED,"         lattice parameter(s)" )
@@ -88,9 +91,10 @@
             print *,"test_Lib_IntegrateManyBeams"
             print *,"^^^^^^^^^^^^^^^^^^^^^^^^^^^"
             print *,"   input atom positions    """//trim(filename)//""""
-            print *,"   extinction distances    """//trim(xifilename)//""""
+ !           print *,"   extinction distances    """//trim(xifilename)//""""
             print *,"   lattice type            """//trim(latticename)//""""
             print *,"   accelerator voltage     ",V," (kV)"
+            print *,"   temperature             ",T," (K)"
             print *,"   indicative latt param   ",a0_in
             print *,""  
         end if
@@ -103,7 +107,7 @@
 !*    
 !******************************************************************************    
             
-        imb = IntegrateManyBeams_ctor( xifilename, latticename,a0_in,filename,V,nPrec = 1 )
+        imb = IntegrateManyBeams_ctor( latticename,a0_in,filename,T,V,nPrec = nPrec,theta = theta )
         if (rank==0) call report(imb)
 
 

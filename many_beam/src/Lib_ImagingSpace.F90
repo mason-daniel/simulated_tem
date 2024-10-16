@@ -13,6 +13,14 @@
 !*      and then "placed" at a grid node int(rt)
 !*      In order to get correct imaging at the grid node 0, we need atoms to be at positions 0.5-nBuf 
 !*  
+!*      For send/recv operations, the ordering of the neighbours is
+!*
+!*        8   1   2             y
+!*          +---+               ^
+!*        7 |   | 3             |
+!*          +---+               +---->x
+!*        6   5   4      
+
 !*      Daniel Mason
 !*      (c) UKAEA September 2024
 !*
@@ -39,13 +47,27 @@
         public      ::      getsigma
         public      ::      getdelta
         public      ::      getnBuf
-        public      ::      getNx,getNy,getNz        
+        public      ::      getNx,getNy,getNz
+        public      ::      getMx,getMy        
         public      ::      getBounds
-
+        !public      ::      myNeighbours
+        public      ::      sendrecv
+        public      ::      whoseBlock
+        public      ::      blockExtent
 
         integer,private                     ::      rank = 0
         integer,private                     ::      nProcs = 1         
-        integer,public                      ::      Lib_ImagingSpace_SIGMA_MULT = 2
+        integer,public                      ::      Lib_ImagingSpace_SIGMA_MULT = 3
+
+        integer,private,parameter           ::      N  = 1
+        integer,private,parameter           ::      NE = 2
+        integer,private,parameter           ::      E  = 3
+        integer,private,parameter           ::      SE = 4
+        integer,private,parameter           ::      S  = 5
+        integer,private,parameter           ::      SW = 6
+        integer,private,parameter           ::      W  = 7
+        integer,private,parameter           ::      NW = 8
+        
 
 
         type,public     ::      ImagingSpace
@@ -54,9 +76,13 @@
             real(kind=real64)               ::      sigma               !   smoothing length scale
             real(kind=real64),dimension(3)  ::      delta
             integer                         ::      nBuf                !   number of buffing cells required to ensure smoothness at boundaries
-            integer                         ::      Nx,Ny,Nz
-            integer                         ::      lbx,ubx,lby,uby     !   the region of image space cells I am responsible for
+            integer                         ::      Nx,Ny,Nz            !   total number of image space cells, divided across all processors
+            integer                         ::      Mx,My               !   number of image space blocks, one each per processor. Note Mz = 1.
+            integer                         ::      ix,iy               !   image space block I am responsible for (0:Mx-1)
+            integer                         ::      lbx,ubx,lby,uby     !   the region of image space cells I am responsible for 
             integer,dimension(:,:),pointer  ::      p                   !   (0:Mx-1,0:My-1) the processor who is responsible for each block
+            integer,dimension(8)            ::      neigh               !   the processor that hold my neighbour
+
         end type 
 
 
@@ -100,7 +126,16 @@
 
         interface   getNz
             module procedure        getNz0
-        end interface 
+        end interface
+
+        interface   getMx
+            module procedure        getMx0
+        end interface
+
+        interface   getMy
+            module procedure        getMy0
+        end interface
+
  
         interface   inMyCell
             module procedure        inMyCell0
@@ -127,7 +162,7 @@
     
 
         function ImagingSpace_null() result(this)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^    
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^    
             type(ImagingSpace)                     ::      this
             this%a = 1.0d0
             this%sigma = 0.5d0
@@ -136,7 +171,12 @@
             this%Nx = 1
             this%Ny = 1
             this%Nz = 1            
+            this%Mx = 1
+            this%My = 1
+            this%ix = 0
+            this%iy = 0
             nullify(this%p)
+            this%neigh = rank
             call setMyBounds(this)
             return
         end function ImagingSpace_null
@@ -149,6 +189,7 @@
             real(kind=real64),intent(in)                ::      sigma
             real(kind=real64),dimension(3),intent(in)   ::      delta
             integer,intent(in)                          ::      Nx,Ny,Nz
+            this = ImagingSpace_null()
             this%a = a
             this%sigma = sigma
             this%delta = delta
@@ -156,13 +197,12 @@
             this%Nx = Nx
             this%Ny = Ny
             this%Nz = Nz
-            nullify(this%p)
             call setMyBounds(this)
             return
         end function ImagingSpace_ctor0
 
         function ImagingSpace_ctor1(a,delta,Nx,Ny,Nz) result(this)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^    
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
             type(ImagingSpace)                          ::      this
             real(kind=real64),intent(in)                ::      a
             real(kind=real64),dimension(3),intent(in)   ::      delta
@@ -255,32 +295,217 @@
     !*      note that this will _not_ include any buffer
             type(ImagingSpace),intent(inout)            ::      this
 
-            integer         ::          Mx,My                       !   number of blocks in x and y dimension 
+            !integer         ::          Mx,My                       !   number of blocks in x and y dimension 
             integer         ::          Cx,Cy                       !   size of each block
             integer         ::          pp,ix,iy                    !   processor number, position in grid
             
-            call FactoriseParallel( this%Nx,this%Ny,nProcs,Mx,My )
+            call FactoriseParallel( this%Nx,this%Ny,nProcs,this%Mx,this%My )
             
-            allocate(this%p(0:Mx-1,0:My-1))
-            Cx = ceiling(real(this%Nx)/Mx)
-            Cy = ceiling(real(this%Ny)/My)
+            allocate(this%p(0:this%Mx-1,0:this%My-1))
+            Cx = ceiling(real(this%Nx)/this%Mx)
+            Cy = ceiling(real(this%Ny)/this%My)
 
             do pp = 0,nProcs-1
-                iy = pp/Mx
-                ix = pp - Mx*iy
+                iy = pp/this%Mx
+                ix = pp - this%Mx*iy
                 this%p(ix,iy) = pp
                 if (pp == rank) then
                     this%lbx = ix*Cx
                     this%ubx = min( this%Nx-1,this%lbx + Cx - 1 )
                     this%lby = iy*Cy
-                    this%uby = min( this%Ny-1,this%lby + Cy - 1 )                    
+                    this%uby = min( this%Ny-1,this%lby + Cy - 1 )  
+                    this%ix = ix
+                    this%iy = iy                  
                 end if
             end do
+
+            call setMyNeighbours( this )
+
 
             return
         end subroutine setMyBounds
 
 
+        subroutine setMyNeighbours( this )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      For send/recv operations, the ordering of the neighbours is
+    !*
+    !*        8   1   2     y
+    !*          +---+       ^
+    !*        7 |   | 3     |
+    !*          +---+       +---->x
+    !*        6   5   4      
+    !*      return processor number for neighbours 1:8
+            type(ImagingSpace),intent(inout)        ::      this
+            !integer,dimension(8),intent(out)        ::      neigh
+
+            integer             ::      jx,jy
+
+        !---    no periodic boundaries. Assume that I hold the edge, unless proved otherwise.
+            this%neigh(:) = rank             
+            jx = this%ix     ; jy = this%iy + 1
+            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(N)  = this%p( jx,jy )
+            jx = this%ix + 1 ; jy = this%iy + 1 
+            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(NE) = this%p( jx,jy )
+            jx = this%ix + 1 ; jy = this%iy 
+            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(E)  = this%p( jx,jy )
+            jx = this%ix + 1 ; jy = this%iy - 1
+            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(SE) = this%p( jx,jy )
+            jx = this%ix     ; jy = this%iy - 1
+            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(S)  = this%p( jx,jy )
+            jx = this%ix - 1 ; jy = this%iy - 1
+            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(SW) = this%p( jx,jy )
+            jx = this%ix - 1 ; jy = this%iy  
+            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(W)  = this%p( jx,jy )
+            jx = this%ix - 1 ; jy = this%iy + 1
+            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(NW) = this%p( jx,jy )
+
+
+            ! print *,"setMyNeighbours ",rank,this%neigh
+            ! neigh(1) = this%p( mod(this%ix+this%Mx+0,this%Mx),mod(this%iy+this%My+1,this%My) )
+            ! neigh(2) = this%p( mod(this%ix+this%Mx+1,this%Mx),mod(this%iy+this%My+1,this%My) )
+            ! neigh(3) = this%p( mod(this%ix+this%Mx+1,this%Mx),mod(this%iy+this%My+0,this%My) )
+            ! neigh(4) = this%p( mod(this%ix+this%Mx+1,this%Mx),mod(this%iy+this%My-1,this%My) )
+            ! neigh(5) = this%p( mod(this%ix+this%Mx+0,this%Mx),mod(this%iy+this%My-1,this%My) )
+            ! neigh(6) = this%p( mod(this%ix+this%Mx-1,this%Mx),mod(this%iy+this%My-1,this%My) )
+            ! neigh(7) = this%p( mod(this%ix+this%Mx-1,this%Mx),mod(this%iy+this%My+0,this%My) )
+            ! neigh(8) = this%p( mod(this%ix+this%Mx-1,this%Mx),mod(this%iy+this%My+1,this%My) )
+
+            return
+        end subroutine setMyNeighbours
+
+        pure integer function whoseBlock( this,ix,iy )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      which processor is responsible for block (ix,iy) = (0:Mx-1,0:My-1)
+            type(ImagingSpace),intent(in)                                       ::      this
+            integer,intent(in)                                                  ::      ix,iy
+            whoseBlock = this%p(ix,iy)
+            return
+        end function whoseBlock
+
+
+        pure subroutine blockExtent( this,p,lbx,ubx,lby,uby )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      return the extent of the block held by processor p
+            type(ImagingSpace),intent(in)                                       ::      this
+            integer,intent(in)                                                  ::      p
+            integer,intent(out)                                                 ::      lbx,ubx,lby,uby
+
+            integer                 ::  ix,iy,Cx,Cy
+            integer                 ::  pp
+
+            Cx = ceiling(real(this%Nx)/this%Mx)
+            Cy = ceiling(real(this%Ny)/this%My)
+
+            do pp = 0,nProcs-1
+                iy = pp/this%Mx
+                ix = pp - this%Mx*iy
+                if (pp == p) then
+                    lbx = ix*Cx
+                    ubx = min( this%Nx-1,this%lbx + Cx - 1 )
+                    lby = iy*Cy
+                    uby = min( this%Ny-1,this%lby + Cy - 1 )  
+                end if
+            end do
+            return
+        end subroutine blockExtent
+
+
+
+        subroutine sendrecv( this,phi )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      complete the update of the diffracted electron beams at slice z
+    !*      by exchanging information across processors
+    !*      For send/recv operations, the ordering of the neighbours is
+    !*
+    !*        8   1   2     y
+    !*          +---+       ^
+    !*        7 |   | 3     |
+    !*          +---+       +---->x
+    !*        6   5   4                  
+            type(ImagingSpace),intent(in)                                       ::      this
+            complex(kind=real64),dimension(:,:,:),pointer,intent(inout)         ::      phi                 !   (0:nG,lbx:ubx,lby:uby)      a 2d slice of phi, of which (lbx+1:ubx-1) is interior
+            integer                         ::      nG,lbx,ubx,lby,uby
+
+#ifdef MPI            
+            integer                         ::      ierror
+            integer,dimension(8)            ::      tag           
+            type(MPI_Request),dimension(8)  ::      request
+#endif
+
+        !---    determine size of problem
+            nG  = ubound( phi,dim=1 )
+            lbx = lbound( phi,dim=2 )
+            ubx = ubound( phi,dim=2 )
+            lby = lbound( phi,dim=3 )
+            uby = ubound( phi,dim=3 )
+
+            print *,"sendrecv rank ",rank,(ubx-lbx-1),(uby-lby-1)
+
+        !---    complete the boundary update where I hold edge, by interpolating out
+            if (this%neigh(S) == rank) phi(:,lbx+1:ubx-1,lby) = 3*phi(:,lbx+1:ubx-1,lby+1) - 3*phi(:,lbx+1:ubx-1,lby+2) + phi(:,lbx+1:ubx-1,lby+3) 
+            if (this%neigh(N) == rank) phi(:,lbx+1:ubx-1,uby) = phi(:,lbx+1:ubx-1,uby-3) - 3*phi(:,lbx+1:ubx-1,uby-2) + 3*phi(:,lbx+1:ubx-1,uby-1)
+            if (this%neigh(W) == rank) phi(:,lbx,lby+1:uby-1) = 3*phi(:,lbx+1,lby+1:uby-1) - 3*phi(:,lbx+1,lby+1:uby-1) + phi(:,lbx+2,lby+1:uby-1)
+            if (this%neigh(E) == rank) phi(:,ubx,lby+1:uby-1) = phi(:,ubx-3,lby+1:uby-1) - 3*phi(:,ubx-2,lby+1:uby-1) + 3*phi(:,ubx-1,lby+1:uby-1)
+
+
+
+#ifdef MPI
+            
+            request = MPI_REQUEST_NULL
+        !---    find my neighbours
+            !call myNeighbours( this, neigh )            
+ 
+            tag(1:8) = 10000 + (/ N ,NE,E ,SE,S ,SW,W ,NW /)
+
+            if (this%neigh(N) /= rank) print *,"sendrecv rank ",rank," post recv from ",this%neigh(N),tag(N)
+            if (this%neigh(E) /= rank) print *,"sendrecv rank ",rank," post recv from ",this%neigh(E),tag(E)
+            if (this%neigh(S) /= rank) print *,"sendrecv rank ",rank," post recv from ",this%neigh(S),tag(S)
+            if (this%neigh(W) /= rank) print *,"sendrecv rank ",rank," post recv from ",this%neigh(W),tag(W)
+
+
+        !---    post the receives
+            if (this%neigh(N) /= rank) call MPI_IRECV( phi(:,lbx+1:ubx-1,uby),(nG+1)*(ubx-lbx-1),MPI_DOUBLE_COMPLEX,this%neigh(N),tag(N),MPI_COMM_WORLD,request(1), ierror )
+            if (this%neigh(E) /= rank) call MPI_IRECV( phi(:,ubx,lby+1:uby-1),(nG+1)*(uby-lby-1),MPI_DOUBLE_COMPLEX,this%neigh(E),tag(E),MPI_COMM_WORLD,request(2), ierror )
+            if (this%neigh(S) /= rank) call MPI_IRECV( phi(:,lbx+1:ubx-1,lby),(nG+1)*(ubx-lbx-1),MPI_DOUBLE_COMPLEX,this%neigh(S),tag(S),MPI_COMM_WORLD,request(3), ierror )
+            if (this%neigh(W) /= rank) call MPI_IRECV( phi(:,lbx,lby+1:uby-1),(nG+1)*(uby-lby-1),MPI_DOUBLE_COMPLEX,this%neigh(W),tag(W),MPI_COMM_WORLD,request(4), ierror )
+
+
+        !---    post the sends
+    !*        8   1   2     y
+    !*          +---+       ^
+    !*        7 |   | 3     |
+    !*          +---+       +---->x
+    !*        6   5   4  
+            if (this%neigh(N) /= rank) print *,"sendrecv rank ",rank," post send to ",this%neigh(N),tag(S)
+            if (this%neigh(E) /= rank) print *,"sendrecv rank ",rank," post send to ",this%neigh(E),tag(W)
+            if (this%neigh(S) /= rank) print *,"sendrecv rank ",rank," post send to ",this%neigh(S),tag(N)
+            if (this%neigh(W) /= rank) print *,"sendrecv rank ",rank," post send to ",this%neigh(W),tag(E)
+
+
+            if (this%neigh(N) /= rank) call MPI_ISEND( phi(:,lbx+1:ubx-1,lby+1),(nG+1)*(ubx-lbx-1),MPI_DOUBLE_COMPLEX,this%neigh(N),tag(S),MPI_COMM_WORLD,request(5) ,ierror )
+            if (this%neigh(E) /= rank) call MPI_ISEND( phi(:,lbx+1,lby+1:uby-1),(nG+1)*(uby-lby-1),MPI_DOUBLE_COMPLEX,this%neigh(E),tag(W),MPI_COMM_WORLD,request(6), ierror )
+            if (this%neigh(S) /= rank) call MPI_ISEND( phi(:,lbx+1:ubx-1,uby-1),(nG+1)*(ubx-lbx-1),MPI_DOUBLE_COMPLEX,this%neigh(S),tag(N),MPI_COMM_WORLD,request(7), ierror )
+            if (this%neigh(W) /= rank) call MPI_ISEND( phi(:,ubx-1,lby+1:uby-1),(nG+1)*(uby-lby-1),MPI_DOUBLE_COMPLEX,this%neigh(W),tag(E),MPI_COMM_WORLD,request(8), ierror )
+
+
+
+        !---    wait for the send=recv to complete
+            call MPI_WAITALL( size(request),request,MPI_STATUSES_IGNORE,ierror )
+#endif
+ 
+
+        !---    complete the corners
+            print *,"sendrecv rank ",rank," corners"
+            phi(:,ubx,uby) = ( phi(:,ubx,uby-3) - 3*phi(:,ubx,uby-2) + 3*phi(:,ubx,uby-1) + phi(:,ubx-3,uby) - 3*phi(:,ubx-2,uby) + 3*phi(:,ubx-1,uby) )/2
+            phi(:,ubx,lby) = ( 3*phi(:,ubx,lby+1) - 3*phi(:,ubx,lby+2) + phi(:,ubx,lby+3) + phi(:,ubx-3,lby) - 3*phi(:,ubx-2,lby) + 3*phi(:,ubx-1,lby) )/2
+            phi(:,lbx,lby) = ( 3*phi(:,lbx,lby+1) - 3*phi(:,lbx,lby+2) + phi(:,lbx,lby+3) + 3*phi(:,lbx+1,lby) - 3*phi(:,lbx+2,lby) + phi(:,lbx+3,lby) )/2
+            phi(:,lbx,uby) = ( phi(:,lbx,uby-3) - 3*phi(:,lbx,uby-2) + 3*phi(:,lbx,uby-1) + 3*phi(:,lbx+1,uby) - 3*phi(:,lbx+2,uby) + phi(:,lbx+3,uby) )/2
+            print *,"sendrecv rank ",rank," done"
+
+
+            return
+        end subroutine sendrecv
 
 !******************************************************************************
 !
@@ -340,6 +565,21 @@
             getNz0 = this%Nz
             return
         end function getNz0
+
+        pure integer function getMx0(this) 
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            type(ImagingSpace),intent(in)          ::      this
+            getMx0 = this%Mx
+            return
+        end function getMx0
+
+        pure integer function getMy0(this) 
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            type(ImagingSpace),intent(in)          ::      this
+            getMy0 = this%My
+            return
+        end function getMy0
+
 
         pure integer function getlbx(this) 
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

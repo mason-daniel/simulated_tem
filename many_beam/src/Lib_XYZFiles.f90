@@ -98,6 +98,8 @@
         public      ::      voxelisedCount
         public      ::      randomiseAtomTypes
         public      ::      getSupercell
+        public      ::      getOrigin
+        public      ::      getPBC
 
         public      ::      shuffle
         
@@ -231,6 +233,7 @@
             module procedure        setColumn_Description0
             module procedure        setColumn_Description1
             module procedure        setColumn_Description2
+            module procedure        setColumn_Description3
         end interface
         
         
@@ -331,6 +334,14 @@
         interface   getSupercell
             module procedure        getSupercell0
             module procedure        getSupercell1
+        end interface
+        
+        interface   getOrigin
+            module procedure        getOrigin0
+        end interface
+        
+        interface   getPBC
+            module procedure        getPBC0
         end interface
         
         interface   getMass
@@ -899,6 +910,66 @@
 
     !---        
 
+        subroutine getOrigin0(this,origin,ok)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      looks for attribute 'Origin="ox oy oz"' in the column description
+            type(XYZFile),intent(in)                    ::      this
+            real(kind=real64),dimension(3),intent(out)  ::      origin
+            logical,intent(out)                         ::      ok
+
+            character(len=XYZFILE_COMMENTLINELENGTH)    ::  dummy
+            integer                         ::      ii
+
+            ok = .false.
+            origin = 0.0d0      !   assume no information in file
+
+            ii = index(trim(convertUpperCase(this%column_description)),"ORIGIN=")
+            if (ii/=0) then
+                dummy = this%column_description(ii+8:)
+                call parse(dummy,origin,ii)
+                ok = (ii==3)
+            end if
+
+            if (.not. ok) then
+                ii = index(trim(convertUpperCase(this%column_description)),"BOXSIZE")       !   check for parcas format
+                if (ii/=0) then
+                    dummy = this%column_description(ii+8:)
+                    call parse( dummy,origin,ii )
+                    ok = (ii==3)
+                    if (ok) then
+                        origin = -origin/2                      !   parcas has atoms from -A/2 to A/2
+                    else
+                        origin = 0
+                    end if
+                end if            
+            end if
+            return
+        end subroutine getOrigin0
+
+
+        subroutine getPBC0(this,pbc,ok)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+    !*      looks for attribute 'pbc="px py pz"' in the column description
+    !*      with px = "true","T",".true." etc
+            type(XYZFile),intent(in)            ::      this
+            logical,dimension(3),intent(out)    ::      pbc
+            logical,intent(out)                 ::      ok
+
+            character(len=XYZFILE_COMMENTLINELENGTH)    ::  dummy
+            integer                         ::      ii
+            ok = .false.
+            pbc = .true.            !   default if no information in file
+
+            ii = index(trim(convertUpperCase(this%column_description)),"PBC=")
+            if (ii/=0) then
+                dummy = this%column_description(ii+5:)
+                call parse(dummy,pbc,ii)
+                ok = (ii==3)
+            end if
+            return
+        end subroutine getPBC0
+
+
         subroutine getSupercell1(this,a,ok)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             type(XYZFile),intent(inout)     ::      this
@@ -962,11 +1033,11 @@
                 return    
             end if    
             
-            ii = index(trim(this%column_description),"Lattice=""")
+            ii = index(trim(convertUpperCase(this%column_description)),"LATTICE")
             if (ii/=0) then
                 print *,"Lib_XYZFiles::getSupercell0 info - file interpretted as extended-xyz format" 
-                uu = findGoodUnit()
-                open(unit=uu,file=trim(this%filename),action="read")
+               ! uu = findGoodUnit()
+               ! open(unit=uu,file=trim(this%filename),action="read")
                     dummy2 = this%column_description(ii+9:)
                     call parse( dummy2,aaaa,jj )
                     if (jj==3) then
@@ -978,15 +1049,15 @@
                     else
                         print *,"Lib_XYZFiles::getSupercell0 ERROR - can't parse """//trim(dummy2)//""""
                     end if
-                close(unit=uu)            
+              !  close(unit=uu)            
                 return    
             end if    
                 
-            ii = index(trim(this%column_description),"boxsize")
+            ii = index(trim(convertUpperCase(this%column_description)),"BOXSIZE")
             if (ii/=0) then
                 print *,"Lib_XYZFiles::getSupercell0 info - file interpretted as PARCAS-xyz format" 
-                uu = findGoodUnit()
-                open(unit=uu,file=trim(this%filename),action="read")
+               ! uu = findGoodUnit()
+               ! open(unit=uu,file=trim(this%filename),action="read")
                     dummy2 = this%column_description(ii+8:)
                     call parse( dummy2,aaaa,jj )
                     if (jj>=3) then
@@ -995,7 +1066,7 @@
                     else
                         print *,"Lib_XYZFiles::getSupercell0 ERROR - can't parse """//trim(dummy2)//""""
                     end if
-                close(unit=uu)            
+                !close(unit=uu)            
                 return    
             end if    
             
@@ -1903,25 +1974,43 @@
             real(kind=real64),dimension(3,3),intent(in)     ::      a
             character(len=*),intent(in),optional            ::      desc
             character(len=XYZFILE_COMMENTLINELENGTH)        ::      dummy
-            write(dummy,fmt='(9f16.8)') a
-            this%column_description = "Lattice="""//adjustl(trim(dummy))//""" Properties=species:S:1:pos:R:3"
+            write(dummy,fmt='(9f16.8)') a           ;   dummy = adjustl(dummy)
+            this%column_description = "Lattice="""//trim(dummy)//""" Properties=species:S:1:pos:R:3"
             if (present(desc)) this%column_description = trim(this%column_description)//trim(desc)
             return
         end subroutine setColumn_Description1        
         
         subroutine setColumn_Description2(this,Nx,Ny,Nz,a,desc)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      set an extended .xyz column description line using unit cell vectors a
             type(XYZFile),intent(inout)     ::      this
             integer,intent(in)              ::      Nx,Ny,Nz
             real(kind=real64),dimension(3,3),intent(in)    ::      a
             character(len=*),intent(in),optional            ::      desc
             character(len=XYZFILE_COMMENTLINELENGTH)        ::      dummy
-            write(dummy,fmt='(9f16.8)') a(1:3,1)*Nx,a(1:3,2)*Ny,a(1:3,3)*Nz
-            this%column_description = "Lattice="""//adjustl(trim(dummy))//""" Properties=species:S:1:pos:R:3"
+            write(dummy,fmt='(9f16.8)') a(1:3,1)*Nx,a(1:3,2)*Ny,a(1:3,3)*Nz     ;   dummy = adjustl(dummy)
+            this%column_description = "Lattice="""//trim(dummy)//""" Properties=species:S:1:pos:R:3"
             if (present(desc)) this%column_description = trim(this%column_description)//trim(desc)
             return
         end subroutine setColumn_Description2        
+        
+        subroutine setColumn_Description3(this,a,origin,pbc,desc)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      set an extended .xyz column description line using lattice vectors a, a box origin and pbc
+            type(XYZFile),intent(inout)     ::      this
+            real(kind=real64),dimension(3,3),intent(in)     ::      a
+            real(kind=real64),dimension(3),intent(in)       ::      origin
+            logical,dimension(3),intent(in),optional        ::      pbc
+            character(len=*),intent(in),optional            ::      desc
+            character(len=XYZFILE_COMMENTLINELENGTH)        ::      dummy,dummy2,dummy3
+            write(dummy,fmt='(9f16.8)') a                       ;   dummy = adjustl(dummy)
+            write(dummy2,fmt='(3f16.8)') origin                 ;   dummy2 = adjustl(dummy2)
+            dummy3 = "T T T"
+            if (present(pbc)) write(dummy3,fmt='(3l2)') pbc     ;   dummy3 = adjustl(dummy3)
+            this%column_description = "Lattice="""//trim(dummy)//""" Origin="""//trim(dummy2)//""" pbc="""//trim(dummy3)//""" Properties=species:S:1:pos:R:3"
+            if (present(desc)) this%column_description = trim(this%column_description)//trim(desc)
+            return
+        end subroutine setColumn_Description3        
         
         
         subroutine setFilename(this,filename)

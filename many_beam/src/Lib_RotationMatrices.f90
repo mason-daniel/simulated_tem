@@ -452,7 +452,7 @@
         
      
         subroutine completeBasis0( z,x,y )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
     !*      given the z-axis vector, complete the basis to provide a triplet x,y,n
     !*      if on input x is set, then use this as a hint to attempt to place x along this direction
             real(kind=real64),dimension(3),intent(in)       ::      z

@@ -91,8 +91,8 @@
         !---    Debye Waller factor and lattice constant
             dwf = DebyeWallerFactor(element,T,latticename)
             a0 = getLatticeConstant(element)          
-            write(*,fmt='(a,f12.6,a)') "Lib_CrystalStructureFactor::crystalStructureFactor0 info - Debye-Waller factor ",dwf," (A^2)"
-            write(*,fmt='(a,3f12.6,a)') "Lib_CrystalStructureFactor::crystalStructureFactor0 info - lattice parameters  ",a0," (A)"
+            write(*,fmt='(a,f12.6,a)')  " Lib_CrystalStructureFactor::crystalStructureFactor0 info - Debye-Waller factor ",dwf," (A^2)"
+            write(*,fmt='(a,3f12.6,a)') " Lib_CrystalStructureFactor::crystalStructureFactor0 info - lattice parameters  ",a0," (A)"
 
         !---    find real DT coeffs
             smin = LIB_INPUTREAL_SMIN
@@ -135,7 +135,7 @@
             do ii = 1,DT_COEFFS
                 write(*,fmt='(i6,4f16.8)') ii,ar(ii),br(ii),ai(ii),bi(ii)
             end do
-            write(*,fmt='(3(a,f12.8))')"Lib_CrystalStructureFactor::crystalStructureFactor0 info - mean square error ",mser," (real) ",msei," (imag)"
+            write(*,fmt='(3(a,f12.8))')" Lib_CrystalStructureFactor::crystalStructureFactor0 info - mean square error ",mser," (real) ",msei," (imag)"
             
         !---    construct complex DT coeffs
             
@@ -228,8 +228,8 @@
 
 
 
-        !---    find the volume per atom and scale Vg
-            omega = getOmega0(latt) * a0(1)**3
+        !---    find the volume per conventional cell and scale Vg
+            omega = getOmega0(latt) * a0(1)**3 * getConventionalnMotif( latt )
 
             Vg = Vg * (HBAR*HBAR/(2*ME))*(4*PI/Omega)
 

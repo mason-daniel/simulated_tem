@@ -19,6 +19,16 @@ set_tests_properties(Lib_ComputePhaseFactor_test
     PASS_REGULAR_EXPRESSION "PASS") 
      
     
+add_executable(test_Lib_FibonacciSphere test_Lib_FibonacciSphere.f90)
+target_link_libraries(test_Lib_FibonacciSphere ManyBeam_Utils CommandLine )
+add_test(NAME Lib_FibonacciSphere_test COMMAND test_Lib_FibonacciSphere )
+set_tests_properties(Lib_FibonacciSphere_test
+    PROPERTIES
+    LABELS "EXAMPLE;SHORT"
+    #ctest will look for "PASS" in the stdout and consider it a pass if it finds it
+    PASS_REGULAR_EXPRESSION "PASS") 
+     
+    
  
 add_executable(test_Lib_ImagingSpace test_Lib_ImagingSpace.F90)
 target_link_libraries(test_Lib_ImagingSpace ManyBeam_Utils CommandLine )
@@ -49,7 +59,7 @@ set_tests_properties(Lib_Gvectors_test
 
 add_executable(test_Lib_IntegrateManyBeams test_Lib_IntegrateManyBeams.f90)
 target_link_libraries(test_Lib_IntegrateManyBeams ManyBeam_Utils CommandLine )
-add_test(NAME Lib_IntegrateManyBeams_test COMMAND test_Lib_IntegrateManyBeams -f ${PROJECT_SOURCE_DIR}/data/test.i111_loop_W.lammps -xi ${PROJECT_SOURCE_DIR}/data/extinctionDistances.W_V150_T300.dat -a0 3.1652 )
+add_test(NAME Lib_IntegrateManyBeams_test COMMAND test_Lib_IntegrateManyBeams -f ${PROJECT_SOURCE_DIR}/data/test.i111_loop_W.lammps -a0 3.1652 )
 set_tests_properties(Lib_IntegrateManyBeams_test 
     PROPERTIES
     LABELS "EXAMPLE;SHORT"

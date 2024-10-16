@@ -52,6 +52,7 @@
  
         public      ::      setR            !   sets the rotation matrix R , and the normal to the foil n. Does not set the thickness.
         public      ::      setThickness    !   computes the bounds of the atom box in the imaging space
+        public      ::      getThickness    !   returns the bounds of the atom box in the imaging space
         public      ::      setDelta        !   computes offset required so after rotation atom in centre of .xyz box is in centre of imaging box
 
         public      ::      scaledDensity   !   converts atoms per cell into a scaled density range 0:1
@@ -125,6 +126,11 @@
  
         interface   setdelta
             module procedure        setdelta0
+        end interface
+
+        interface   getThickness
+            module procedure        getThickness0
+            module procedure        getThickness1
         end interface
 
         interface   seta_super
@@ -473,15 +479,22 @@
 
         pure subroutine setR0(this,R)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      sets the rotation matrix, and the normal to the foil after rotation. Does not set the thickness.
+    !*      sets the rotation matrix, and the normal to the foil after rotation. 
             type(AtomSpace),intent(inout)                       ::      this
             real(kind=real64),dimension(3,3),intent(in)         ::      R
 
+            real(kind=real64)                   ::          L_before,L_after
+            real(kind=real64),dimension(3,3)    ::          dR
+            L_before = getThickness(this)
+
             this%R = R
- 
+            
         !---    normal after rotation
             this%n(1:3) = this%R(1:3,1)*this%n0(1) + this%R(1:3,2)*this%n0(2) + this%R(1:3,3)*this%n0(3) 
 
+            dR = matmul( R,transpose(this%R) )
+            L_after = getThickness(this,dR)
+            if (L_before > 0) this%L = this%L * L_after / L_before
             return
         end subroutine setR0
 
@@ -503,8 +516,38 @@
         end subroutine setDelta0
 
 
+        pure real(kind=real64) function getThickness0(this)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            type(AtomSpace),intent(in)                              ::      this
+            real(kind=real64),dimension(3)              ::      nn      !   new normal
+            real(kind=real64)                           ::      a3dotn0 
+            
+            nn(1:3) = this%R(1:3,1)*this%n0(1) + this%R(1:3,2)*this%n0(2) + this%R(1:3,3)*this%n0(3) 
+
+            a3dotn0 = dot_product( this%a_super(1:3,3) , this%n0 )  
+            getThickness0 = a3dotn0/nn(3)
+            !getThickness0 = this%L
+            return
+        end function getThickness0
 
 
+        pure real(kind=real64) function getThickness1(this,R)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      compute the foil thickness assuming a further rotation by R
+            type(AtomSpace),intent(in)                              ::      this
+            real(kind=real64),dimension(3,3),intent(in)             ::      R
+
+            real(kind=real64),dimension(3,3)            ::      RR      !   new rotation
+            real(kind=real64),dimension(3)              ::      nn      !   new normal
+            real(kind=real64)                           ::      a3dotn0 
+            
+            RR = matmul(R,this%R)
+            nn(1:3) = RR(1:3,1)*this%n0(1) + RR(1:3,2)*this%n0(2) + RR(1:3,3)*this%n0(3) 
+
+            a3dotn0 = dot_product( this%a_super(1:3,3) , this%n0 )  
+            getThickness1 = a3dotn0/nn(3)
+            return
+        end function getThickness1
 
         subroutine setThickness(this,r)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

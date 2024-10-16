@@ -17,19 +17,20 @@
 
         
     !---    define the elements recognised        
-        integer,private,parameter                               ::      NELNAMES = 50
-        integer,public,parameter                                ::      ELNAME_LEN = 2
-        integer,public,parameter                                ::      LATTNAME_LEN = 3
-        integer,public,parameter                                ::      DT_COEFFS = 5
+        integer,private,parameter                               ::          NELNAMES = 50
+        integer,public,parameter                                ::          ELNAME_LEN = 2
+        integer,public,parameter                                ::          LATTNAME_LEN = 3
+        integer,public,parameter                                ::          DT_COEFFS = 5
 
-        character(len=ELNAME_LEN),dimension(NELNAMES),parameter  ::      ELNAMES = (/   &
+        character(len=ELNAME_LEN),dimension(NELNAMES),parameter  ::         ELNAMES = (/   &
                         'Li','Be','C ','O ','Na','Mg','Al','Si','K '                    &
                        ,'Ca','Ti','V ','Cr','Mn','Fe','Co','Ni','Cu','Zn','Ga','Ge'     &
                        ,'As','Rb','Sr','Y ','Zr','Nb','Mo','Ru','Rh','Pd','Ag','Cd'     &
                        ,'Sn','Cs','Ba','La','Ce','Gd','Hf','Ta','W ','Re','Os','Ir'     &
                        ,'Pt','Au','Tl','Pb','Th' /)        
 
-        character(len=LATTNAME_LEN),dimension(NELNAMES),parameter  ::      ELLATTICE = (/           &
+        character(len=LATTNAME_LEN),public,parameter               ::       UNKNOWN_LATTICE = "unk"
+        character(len=LATTNAME_LEN),dimension(NELNAMES),parameter  ::       ELLATTICE = (/           &
                         'bcc','hcp','dia','unk','bcc','hcp','fcc','dia','bcc'                       &
                        ,'fcc','hcp','bcc','bcc','bcc','bcc','hcp','fcc','fcc','fcc','ort','dia'     &
                        ,'rho','bcc','fcc','hcp','hcp','bcc','bcc','hcp','fcc','fcc','fcc','hcp'     &
@@ -140,7 +141,7 @@
 
 
         pure character(len=LATTNAME_LEN) function getLatticeName0(el) 
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      return name of lattice recorded for element
             character(len=*),intent(in)         ::      el
             integer         ::      ii
@@ -155,7 +156,7 @@
 
 
         pure real(kind=real64) function getElementMass0(el) 
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      return mass recorded for element
             character(len=*),intent(in)         ::      el
             integer         ::      ii
@@ -171,7 +172,7 @@
 
 
         pure function getLatticeConstant(el) result(a0)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      return lattice constants for element in A
             character(len=*),intent(in)         ::      el
             real(kind=real64),dimension(3)      ::      a0            

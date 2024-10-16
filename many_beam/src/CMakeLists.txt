@@ -5,6 +5,10 @@
 find_package(LAPACK REQUIRED)
  
 
+find_package(PNG REQUIRED)
+include_directories(${PNG_INCLUDE_DIR})
+ 
+
 #Split the command line parsing code into its own lib
 #And do the same thing
 add_library(CommandLine STATIC
@@ -44,6 +48,21 @@ target_include_directories(CSF_Utils
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(CSF_Utils CommandLine ${LAPACK_LIBRARIES})
     
+
+#Split png handling code into its own lib
+add_library(PCA_Png STATIC
+    Lib_Png.f90
+    Lib_ColourScale.f90 
+    Lib_Greyscale.c
+)
+set_target_properties(PCA_Png PROPERTIES 
+    Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/include)
+target_include_directories(PCA_Png
+    PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+target_link_libraries(PCA_Png ${PNG_LIBRARY})
+    
     
     
 #Split utility code into its own lib
@@ -53,6 +72,7 @@ add_library(ManyBeam_Utils STATIC
     Lib_FactoriseParallel.f90
     Lib_RotationMatrices.f90
     Lib_Quaternions.f90
+    Lib_FibonacciSphere.f90
     Lib_ImagingSpace.F90
     Lib_ComputePhaseFactor.f90
     Lib_AtomSpace.f90
@@ -62,6 +82,7 @@ add_library(ManyBeam_Utils STATIC
     Lib_ReadExtinctionDistances.f90
     Lib_RelativisticElectrons.f90
     Lib_ManyBeam.f90 
+    Lib_RK4.f90
     Lib_IntegrateManyBeams.f90
     )
 set_target_properties(ManyBeam_Utils PROPERTIES 
@@ -99,6 +120,14 @@ install(TARGETS ManyBeam_Utils
     DESTINATION
     include)
     
+
+install(TARGETS PCA_Png
+    EXPORT ${PROJECT_NAME}_Targets
+    ARCHIVE
+    DESTINATION lib
+    INCLUDES 
+    DESTINATION
+    include)
     
 install(TARGETS CommandLine
     EXPORT ${PROJECT_NAME}_Targets

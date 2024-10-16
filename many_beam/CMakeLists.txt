@@ -161,4 +161,4 @@ install(EXPORT ${PROJECT_NAME}_Targets
     ${PROJECT_NAME}::
     DESTINATION
     lib/cmake)
-export(TARGETS ManyBeam_Utils CSF_Utils CommandLine FILE ${PROJECT_NAME}Config.cmake)
+export(TARGETS ManyBeam_Utils CSF_Utils PCA_Png CommandLine FILE ${PROJECT_NAME}Config.cmake)
