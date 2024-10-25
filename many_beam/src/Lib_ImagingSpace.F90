@@ -177,7 +177,9 @@
             this%iy = 0
             nullify(this%p)
             this%neigh = rank
-            call setMyBounds(this)
+            this%Mx = 1
+            this%My = 1
+            !call setMyBounds(this)
             return
         end function ImagingSpace_null
         
@@ -197,6 +199,9 @@
             this%Nx = Nx
             this%Ny = Ny
             this%Nz = Nz
+            call FactoriseParallel( this%Nx,this%Ny,nProcs,this%Mx,this%My )            
+            allocate(this%p(0:this%Mx-1,0:this%My-1))
+
             call setMyBounds(this)
             return
         end function ImagingSpace_ctor0
@@ -299,9 +304,8 @@
             integer         ::          Cx,Cy                       !   size of each block
             integer         ::          pp,ix,iy                    !   processor number, position in grid
             
-            call FactoriseParallel( this%Nx,this%Ny,nProcs,this%Mx,this%My )
-            
-            allocate(this%p(0:this%Mx-1,0:this%My-1))
+            ! call FactoriseParallel( this%Nx,this%Ny,nProcs,this%Mx,this%My )            
+            ! allocate(this%p(0:this%Mx-1,0:this%My-1))
             Cx = ceiling(real(this%Nx)/this%Mx)
             Cy = ceiling(real(this%Ny)/this%My)
 

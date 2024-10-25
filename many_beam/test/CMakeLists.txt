@@ -21,7 +21,7 @@ set_tests_properties(Lib_ComputePhaseFactor_test
     
 add_executable(test_Lib_FibonacciSphere test_Lib_FibonacciSphere.f90)
 target_link_libraries(test_Lib_FibonacciSphere ManyBeam_Utils CommandLine )
-add_test(NAME Lib_FibonacciSphere_test COMMAND test_Lib_FibonacciSphere )
+add_test(NAME Lib_FibonacciSphere_test COMMAND test_Lib_FibonacciSphere 1000 )
 set_tests_properties(Lib_FibonacciSphere_test
     PROPERTIES
     LABELS "EXAMPLE;SHORT"

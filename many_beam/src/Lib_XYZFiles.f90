@@ -1179,7 +1179,7 @@
                    
                                                              
                 end do
-                write(*,fmt='(a,3f16.8,a,3f16.8)') "Lib_XYZFiles::input_lammps info - read box size ",xmin,":",xmax
+                write(*,fmt='(a,3f12.6,a,3f12.6)') " Lib_XYZFiles::input_lammps info - read box size ",xmin,":",xmax
                 xmax = xmax - xmin
                 
                 

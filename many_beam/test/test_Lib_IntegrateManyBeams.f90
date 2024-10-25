@@ -29,7 +29,7 @@
         real(kind=real64)               ::      V = 200.0d0             !   accelerator voltage (kV)
         real(kind=real64),dimension(3)  ::      a0_in = 3.0             !   indicative lattice parameter (A)
         integer                         ::      nPrec = 1               !   precession angles
-        real(kind=real64)               ::      theta = 0.003d0         !   precession angle
+        real(kind=real64)               ::      precAngle = 0.003d0         !   precession angle
 
 
     !---    physical variables
@@ -107,7 +107,7 @@
 !*    
 !******************************************************************************    
             
-        imb = IntegrateManyBeams_ctor( latticename,a0_in,filename,T,V,nPrec = nPrec,theta = theta )
+        imb = IntegrateManyBeams_ctor( latticename,a0_in,filename,T,V,nPrec = nPrec,precAngle = precAngle )
         if (rank==0) call report(imb)
 
 

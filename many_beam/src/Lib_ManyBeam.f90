@@ -132,13 +132,6 @@
             allocate(this%Sg(0:this%nG))
             allocate(this%kplusgonk(3,0:this%nG))
             call setOrientationDependence(this)
-            ! this%Sg(0) = 0.0d0
-            ! this%kplusgonk(:,0) = (/ 0,0,1 /)
-            ! do ii = 1,this%nG
-            !     gg = getG(this%gv,ii)
-            !     this%kplusgonk(:,ii) = (this%kvec(:) + gg(:)) / this%k
-            !     this%Sg(ii) = deviationParameter(this%kvec(:),gg)                 
-            ! end do
 
         !---    set extinction distances
             allocate(this%ixi(0:this%nG,0:this%nG))
@@ -183,7 +176,7 @@
             
             uu = 6 ; if (present(u)) uu = u
             oo = 0 ; if (present(o)) oo = o
-            write(unit=uu,fmt='(a,i6,a,3f12.6,a)') repeat(" ",oo)//"ManyBeam [nG=",this%nG,"]"
+            write(unit=uu,fmt='(a,i6,a,3f12.6,a)') repeat(" ",oo)//"ManyBeam [nG=",this%nG,", k = ",this%kvec," (1/A)]"
             if (isMillerBravais(this%gv)) then
                 write(unit=uu,fmt='(a,a16,3a12,a36)') repeat(" ",oo+4),"Miller-Bravais","S_g (1/A)"," Re[xi_g]"," Im[xi_g]"," (k+g)/|k|"
                 write(unit=uu,fmt='(a,4i4,6f12.6)') repeat(" ",oo+4),(/0,0,0,0/),this%Sg(0),real(1/this%iXi(0,0)),aimag(1/this%iXi(0,0)),this%kplusgonk(:,0)
@@ -280,18 +273,17 @@
 
 
 
-        subroutine perfectLatticeIntensity1(this, L_R, R, Ig)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        subroutine perfectLatticeIntensity1(this, L_R, R, maxIntensity, Ig )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      use the many-beam equations in the columnar/loss free approximation
     !*      to find the intensity at the back of the foil
     !*      assuming a tilt R.
             type(ManyBeam),intent(in)                               ::      this
             real(kind=real64),intent(in)                            ::      L_R     !   foil thickness after rotation
             real(kind=real64),dimension(3,3),intent(in)             ::      R
+            logical,intent(in)                                      ::      maxIntensity
             real(kind=real64),dimension(0:this%nG),intent(out)      ::      Ig
-
-            !real(kind=real64),dimension(3,3)        ::      R0      !   original rotation matrix
-            !real(kind=real64),dimension(3,3)        ::      RR      !   new rotation matrix
+ 
             integer                             ::      ii
             real(kind=real64),dimension(3)      ::      gg
             real(kind=real64),dimension(0:this%nG)  ::      Sg
@@ -305,84 +297,155 @@
                 Sg(ii) = deviationParameter(this%kvec(:),gg)                 
             end do
     
-            call perfectLatticeIntensity0(this, L_R, Ig, Sg)
+            call perfectLatticeIntensity0(this, L_R, maxIntensity, Ig, Sg)
 
 
             return
         end subroutine perfectLatticeIntensity1
 
-        subroutine perfectLatticeIntensity0(this, L, Ig , Sg)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        subroutine perfectLatticeIntensity0(this, L, maxIntensity, Ig  , Sg)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      use the many-beam equations in the columnar/loss free approximation
-    !*      to find the intensity at the back of the foil
+    !*      to find the maximum intensity in the foil, 
+    !*      or the intensity at the back of the foil
             type(ManyBeam),intent(in)                               ::      this
             real(kind=real64),intent(in)                            ::      L
+            logical,intent(in)                                      ::      maxIntensity
             real(kind=real64),dimension(0:this%nG),intent(out)      ::      Ig
             real(kind=real64),dimension(0:this%nG),intent(in),optional      ::      Sg
             
-        !    complex(kind=real64),dimension(0:this%nG,0:this%nG)     ::      M_c
-            real(kind=real64),dimension(0:this%nG,0:this%nG)        ::      M_r
+            complex(kind=real64),dimension(0:this%nG,0:this%nG)     ::      Psi
+        !    real(kind=real64),dimension(0:this%nG,0:this%nG)        ::      M_r
         !    real(kind=real64)                                       ::      rho
             !real(kind=real64),dimension(3,0:this%nG)                ::      grad_arg_x              !   (3,0:nG)
 
-            real(kind=real64),dimension(0:this%nG)                  ::      lambda
-            real(kind=real64),dimension( 66*(1+this%nG) )           ::      work
+            real(kind=real64),dimension(0:this%nG)                  ::      lambda_g
+            !real(kind=real64),dimension( 66*(1+this%nG) )           ::      work
             
-            integer                                                 ::      ii,jj            
-
+            integer                                                 ::      ii,jj,kk            
+            real(kind=real64)                   ::      zz
             complex(kind=real64)                ::      phi
+ 
+            if (present(Sg)) then
+                call perfectLatticeEigendecomp( this, lambda_g, Psi , Sg )
+            else
+                call perfectLatticeEigendecomp( this, lambda_g, Psi , Sg )
+            end if
 
-        !---    perfect lattice propagation matrix
-        !    rho = 1.0d0
-        !    grad_arg_x = 0.0d0            
-        !    M_c = propagationMatrix( this, rho, grad_arg_x )
+        ! !---    add the extinction distance term
+        !     M_r(0:this%nG,0:this%nG) = - PI * real( this%iXi(0:this%nG,0:this%nG) )
+            
+        ! !---    add the Sg term to the diagonal. Note that Sg(0) = 0
+        !     if (present(Sg)) then
+        !         do ii = 1,this%nG               
+        !             M_r(ii,ii) = M_r(ii,ii) + 2 * PI * Sg(ii)            
+        !         end do
+        !     else
+        !         do ii = 1,this%nG               
+        !             M_r(ii,ii) = M_r(ii,ii) + 2 * PI * this%Sg(ii)            
+        !         end do
+        !     end if
+ 
 
-        !---    Now make the propagation matrix pure real symmetric hermitian. Then it's trivially solvable.
+        !     if (LIB_MANYBEAM_DBG) then
+        !         print *,"perfectLatticeIntensity0 info - propagationMatrix Re(M)"                 
+        !         do ii = 0,this%nG
+        !             write (*,fmt='(100f16.8)') M_r(ii,:)
+        !         end do
+                 
+        ! !     end if
+
+        ! !---    find eigenvalues and eigenvectors
+        !     call DSYEV( "V","U",(1+this%nG),M_r,(1+this%nG),lambda,work,size(work),ii )
+
+        !---    what is the thickness of the foil?            
+
+            if (LIB_MANYBEAM_DBG) print *,"perfectLatticeIntensity0 info - lambda ",lambda_g
+            
+        !---    compute solution
 
 
+
+            if (maxIntensity) then
+
+                !   redefine Psi_gg' = Psi_gg' Psi_g'0^H
+                do jj = 0,this%nG
+                    do ii = 1,this%nG
+                        Psi(ii,jj) =  Psi(ii,jj) * conjg( Psi(0,jj) )
+                    end do
+                    Psi(0,jj) =  Psi(0,jj) * conjg( Psi(0,jj) )
+                end do
+                
+                !   compute max intensity at points z = 0,a,2a ... L 
+                Ig = -huge(1.0)
+                do kk = 0,floor( L/this%a )
+                    zz = kk*this%a
+                    do ii = 0,this%nG
+                        phi = 0.0d0
+                        do jj = 0,this%nG
+                            phi = phi + Psi(ii,jj) * exp( EYE * lambda_g(jj) * zz ) 
+                        end do
+                        Ig(ii) = max( Ig(ii) , real(phi)*real(phi) + aimag(phi)*aimag(phi) )
+                    end do
+                end do
+
+            else
+
+                !   compute intensity at point z = L only
+                do ii = 0,this%nG
+                    phi = 0.0d0
+                    do jj = 0,this%nG
+                        phi = phi + Psi(ii,jj) * exp( EYE * lambda_g(jj) * L ) * conjg( Psi(0,jj) )
+                    end do
+                    Ig(ii) = real(phi)*real(phi) + aimag(phi)*aimag(phi)
+                end do
+    
+            end if
+
+            return
+        end subroutine perfectLatticeIntensity0
+  
+
+
+        subroutine perfectLatticeEigendecomp( this, lambda_g, Psi , Sg )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      construct the perfect lattice propagation matrix  M_c
+    !*      and then perform the eigendecomposition  M_c = Psi Lambda Psi^T
+    !*      return the eigenvalues lambda_g and the eigenvectors 
+
+            type(ManyBeam),intent(in)                               ::      this
+            real(kind=real64),dimension(0:this%nG),intent(out)      ::      lambda_g
+            complex(kind=real64),dimension(0:this%nG,0:this%nG),intent(out)     ::      Psi
+            real(kind=real64),dimension(0:this%nG),intent(in),optional          ::      Sg
+            
+            complex(kind=real64),dimension( 66*(1+this%nG) )        ::      work
+            real(kind=real64),dimension( 3*(1+this%nG)-2 )          ::      rwork
+            
+            integer                                                 ::      ii           
+ 
         !---    add the extinction distance term
-            M_r(0:this%nG,0:this%nG) = - PI * real( this%iXi(0:this%nG,0:this%nG) )
+            Psi(0:this%nG,0:this%nG) = - PI * this%iXi(0:this%nG,0:this%nG)
             
         !---    add the Sg term to the diagonal. Note that Sg(0) = 0
             if (present(Sg)) then
                 do ii = 1,this%nG               
-                    M_r(ii,ii) = M_r(ii,ii) + 2 * PI * Sg(ii)            
+                    Psi(ii,ii) = Psi(ii,ii) + 2 * PI * Sg(ii)            
                 end do
             else
                 do ii = 1,this%nG               
-                    M_r(ii,ii) = M_r(ii,ii) + 2 * PI * this%Sg(ii)            
+                    Psi(ii,ii) = Psi(ii,ii) + 2 * PI * this%Sg(ii)            
                 end do
             end if
- 
-
-            if (LIB_MANYBEAM_DBG) then
-                print *,"perfectLatticeIntensity0 info - propagationMatrix Re(M)"                 
-                do ii = 0,this%nG
-                    write (*,fmt='(100f16.8)') M_r(ii,:)
-                end do
-                 
-            end if
+  
 
         !---    find eigenvalues and eigenvectors
-            call DSYEV( "V","U",(1+this%nG),M_r,(1+this%nG),lambda,work,size(work),ii )
-
-        !---    what is the thickness of the foil?            
-
-            if (LIB_MANYBEAM_DBG) print *,"perfectLatticeIntensity0 info - lambda ",lambda
-            
-        !---    compute solution
-            do ii = 0,this%nG
-                phi = 0.0d0
-                do jj = 0,this%nG
-                    phi = phi + M_r(ii,jj) * exp( EYE * lambda(jj) * L ) * M_r(0,jj)
-                end do
-                Ig(ii) = real(phi)*real(phi) + aimag(phi)*aimag(phi)
-            end do
-
+            call ZHEEV( "V","U",(1+this%nG),Psi,(1+this%nG),lambda_g,work,size(work),rwork,ii )
 
             return
-        end subroutine perfectLatticeIntensity0
- 
+        end subroutine perfectLatticeEigendecomp
+
+
+
         pure function propagationMatrix( this, rho, grad_arg_x ) result( M )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      (k+g)/|k| . grad Phi = i M Phi 

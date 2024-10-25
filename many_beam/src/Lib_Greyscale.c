@@ -27,13 +27,13 @@ float* read_greyscale_png_file(char* file_name,int* width, int* height  )
         /* open file and test for it being a png */                                                       
         FILE *fp = fopen(file_name, "rb");                                                                
         if (!fp) {
-            printf("Lib_Greyscale::read_greyscale_png_file() error - file io error %s \n",file_name);
+            printf(" Lib_Greyscale::read_greyscale_png_file() error - file io error %s \n",file_name);
             return NULL;                                                                
         }                 
         unsigned char header[8];    // 8 is the maximum size that can be checked                                   
         fread(header, 1, 8, fp);                                                                          
         if (png_sig_cmp(header, 0, 8)) {
-            printf("Lib_Greyscale::read_greyscale_png_file() error - file not .png error %s \n",file_name);
+            printf(" Lib_Greyscale::read_greyscale_png_file() error - file not .png error %s \n",file_name);
             return NULL;                                                                
         }              
         
@@ -42,18 +42,18 @@ float* read_greyscale_png_file(char* file_name,int* width, int* height  )
         png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);                        
                                                                                                           
         if (!png_ptr) {
-            printf("Lib_Greyscale::read_greyscale_png_file() error - file not .png error %s \n",file_name);
+            printf(" Lib_Greyscale::read_greyscale_png_file() error - file not .png error %s \n",file_name);
             return NULL;                                                                
         }                        
                                                                                                           
         png_infop info_ptr = png_create_info_struct(png_ptr);                                                       
         if (!info_ptr) {
-            printf("Lib_Greyscale::read_greyscale_png_file() error - read header error %s \n",file_name);
+            printf(" Lib_Greyscale::read_greyscale_png_file() error - read header error %s \n",file_name);
             return NULL;                                                                
         }                                     
                                                                                                           
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_Greyscale::read_greyscale_png_file() error - read header error %s \n",file_name);
+            printf(" Lib_Greyscale::read_greyscale_png_file() error - read header error %s \n",file_name);
             return NULL;                                                                
         }                                                  
                                                                                                           
@@ -74,7 +74,7 @@ float* read_greyscale_png_file(char* file_name,int* width, int* height  )
                                                          
         /* read file */                                                                                   
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_Greyscale::read_greyscale_png_file() error - read image error %s \n",file_name);
+            printf(" Lib_Greyscale::read_greyscale_png_file() error - read image error %s \n",file_name);
             return NULL;                                                                
         }                                                             
         png_bytep *  row_pointers = (png_bytep*) malloc(sizeof(png_bytep) * (*height));                  
@@ -145,7 +145,7 @@ float* read_greyscale_png_file(char* file_name,int* width, int* height  )
                 }   
             }
         } else {
-            printf("Lib_Greyscale::read_greyscale_png_file() error -  color_type & bit depth not coded %s \n",file_name);
+            printf(" Lib_Greyscale::read_greyscale_png_file() error -  color_type & bit depth not coded %s \n",file_name);
             return NULL;
         }   
         
@@ -169,7 +169,7 @@ void write_greyscale_png_file(char* file_name, int width, int height, float* img
         /* create file */                                                                                 
         FILE *fp = fopen(file_name, "wb");                                                                
         if (!fp) {
-            printf("Lib_Greyscale::write_greyscale_png_file() error - file io error %s \n",file_name);
+            printf(" Lib_Greyscale::write_greyscale_png_file() error - file io error %s \n",file_name);
             return;
         }   
                                                                                                           
@@ -178,18 +178,18 @@ void write_greyscale_png_file(char* file_name, int width, int height, float* img
         png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);                       
                                                                                                           
         if (!png_ptr) {
-            printf("Lib_Greyscale::write_greyscale_png_file() error - write header error %s \n",file_name);
+            printf(" Lib_Greyscale::write_greyscale_png_file() error - write header error %s \n",file_name);
             return;
         }         
                                                                                                           
         png_infop info_ptr = png_create_info_struct(png_ptr);                                                       
         if (!info_ptr){
-            printf("Lib_Greyscale::write_greyscale_png_file() error - write header error %s \n",file_name);
+            printf(" Lib_Greyscale::write_greyscale_png_file() error - write header error %s \n",file_name);
             return;
         }                                        
                                                                                                           
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_Greyscale::write_greyscale_png_file() error - write header error %s \n",file_name);
+            printf(" Lib_Greyscale::write_greyscale_png_file() error - write header error %s \n",file_name);
             return;
         }                                            
                                                                                                           
@@ -198,7 +198,7 @@ void write_greyscale_png_file(char* file_name, int width, int height, float* img
                                                                                                           
         /* write header */                                                                                
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_Greyscale::write_greyscale_png_file() error - write header error %s \n",file_name);
+            printf(" Lib_Greyscale::write_greyscale_png_file() error - write header error %s \n",file_name);
             return;
         }                                 
                                                                       
@@ -212,10 +212,10 @@ void write_greyscale_png_file(char* file_name, int width, int height, float* img
                                                                                                           
         png_write_info(png_ptr, info_ptr);                                                                
                                                                                                           
-        printf("Lib_Greyscale::write_greyscale_png_file() info - width,height,color_type,bit_depth %d,%d,%d,%d \n", width,height,(int)color_type,(int)bit_depth);                                                                                                               
+        printf(" Lib_Greyscale::write_greyscale_png_file() info - width,height,color_type,bit_depth %d,%d,%d,%d \n", width,height,(int)color_type,(int)bit_depth);                                                                                                               
         /* write bytes */                                                                                 
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_Greyscale::write_greyscale_png_file() error - write image error %s \n",file_name);
+            printf(" Lib_Greyscale::write_greyscale_png_file() error - write image error %s \n",file_name);
             return;
         }                                               
         
@@ -253,7 +253,7 @@ void write_greyscale_png_file(char* file_name, int width, int height, float* img
                                                                                                           
         /* end write */                                                                                   
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_Greyscale::write_greyscale_png_file() error - write image error %s \n",file_name);
+            printf(" Lib_Greyscale::write_greyscale_png_file() error - write image error %s \n",file_name);
             return;
         }                                                   
                                                                                                           
@@ -285,7 +285,7 @@ void write_rgb_png_file(char* file_name, int width, int height, float* img )
         /* create file */                                                                                 
         FILE *fp = fopen(file_name, "wb");                                                                
         if (!fp) {
-            printf("Lib_rgb::write_rgb_png_file() error - file io error %s \n",file_name);
+            printf(" Lib_rgb::write_rgb_png_file() error - file io error %s \n",file_name);
             return;
         }   
                                                                                                           
@@ -294,18 +294,18 @@ void write_rgb_png_file(char* file_name, int width, int height, float* img )
         png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);                       
                                                                                                           
         if (!png_ptr) {
-            printf("Lib_rgb::write_rgb_png_file() error - write header error %s \n",file_name);
+            printf(" Lib_rgb::write_rgb_png_file() error - write header error %s \n",file_name);
             return;
         }         
                                                                                                           
         png_infop info_ptr = png_create_info_struct(png_ptr);                                                       
         if (!info_ptr){
-            printf("Lib_rgb::write_rgb_png_file() error - write header error %s \n",file_name);
+            printf(" Lib_rgb::write_rgb_png_file() error - write header error %s \n",file_name);
             return;
         }                                        
                                                                                                           
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_rgb::write_rgb_png_file() error - write header error %s \n",file_name);
+            printf(" Lib_rgb::write_rgb_png_file() error - write header error %s \n",file_name);
             return;
         }                                            
                                                                                                           
@@ -314,7 +314,7 @@ void write_rgb_png_file(char* file_name, int width, int height, float* img )
                                                                                                           
         /* write header */                                                                                
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_rgb::write_rgb_png_file() error - write header error %s \n",file_name);
+            printf(" Lib_rgb::write_rgb_png_file() error - write header error %s \n",file_name);
             return;
         }                                 
                                                                       
@@ -328,16 +328,16 @@ void write_rgb_png_file(char* file_name, int width, int height, float* img )
                                                                                                           
         png_write_info(png_ptr, info_ptr);                                                                
                                                                                                           
-        printf("Lib_rgb::write_rgb_png_file() info - width,height,color_type,bit_depth %d,%d,%d,%d \n", width,height,(int)color_type,(int)bit_depth);                                                                                                               
+        printf(" Lib_rgb::write_rgb_png_file() info - width,height,color_type,bit_depth %d,%d,%d,%d \n", width,height,(int)color_type,(int)bit_depth);                                                                                                               
         /* write bytes */                                                                                 
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_rgb::write_rgb_png_file() error - write image error %s \n",file_name);
+            printf(" Lib_rgb::write_rgb_png_file() error - write image error %s \n",file_name);
             return;
         }                                               
         
         
         // convert img data into row_pointers
-        printf("Lib_rgb::write_rgb_png_file() info - row_pointers size %d  \n", (int)png_get_rowbytes(png_ptr,info_ptr) );    
+        printf(" Lib_rgb::write_rgb_png_file() info - row_pointers size %d  \n", (int)png_get_rowbytes(png_ptr,info_ptr) );    
         png_bytep * row_pointers = (png_bytep*) malloc( sizeof(png_bytep) * height);             
         int x,y;                      
         for (y=0; y<height; y++) {                                                                         
@@ -384,7 +384,7 @@ void write_rgb_png_file(char* file_name, int width, int height, float* img )
                                                                                                           
         /* end write */                                                                                   
         if (setjmp(png_jmpbuf(png_ptr))) {
-            printf("Lib_rgb::write_rgb_png_file() error - write image error %s \n",file_name);
+            printf(" Lib_rgb::write_rgb_png_file() error - write image error %s \n",file_name);
             return;
         }                                                   
                                                                                                           

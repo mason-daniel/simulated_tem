@@ -44,7 +44,7 @@
             real(kind=real64)                       ::      u
             
             u = 1 + E*V/(ME*C*C)
-            u = c*sqrt( 1 - 1/(u*u) )
+            u = C*sqrt( 1 - 1/(u*u) )
             
             return
         end function velocity

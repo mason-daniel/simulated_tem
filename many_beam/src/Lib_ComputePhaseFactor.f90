@@ -71,7 +71,7 @@
         end subroutine computePhaseFactor0
 
 
-        subroutine computePhaseFactor1( mynAtoms, rt,g, img, grad_arg_x,rho,x )
+        subroutine computePhaseFactor1( mynAtoms, rt,g, img, delta, grad_arg_x,rho,x )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      compute a smoothed approximation x ~ exp( - i g.u )  
     !*      and at the same time a density estimation rho(r) and grad x
@@ -97,6 +97,7 @@
             real(kind=real64),dimension(1:,1:),intent(in)               ::      rt      !   (1:3,1:myNatoms) atom positions, scaled to rt = R (r-delta)/a. Typically in range  lbound(x):ubound(x)
             real(kind=real64),dimension(1:,1:),intent(in)               ::      g       !   (1:3,1:nGvec), reciprocal lattice vectors, with lengths in 1/A
             type(ImagingSpace),intent(in)                               ::      img 
+            real(kind=real64),dimension(3),intent(in)                   ::      delta   !   after rotation, it is necessary to apply an offst to atom positions so that central atom ends up in centre of box.
             
             real(kind=real64),dimension(:,:,:,:,:),pointer,intent(inout)        ::      grad_arg_x   !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
             real(kind=real64),dimension(:,:,:),pointer,intent(inout)            ::      rho     !   (lbx:ubx,lby:uby,lbz:ubz)
@@ -132,8 +133,8 @@
             xx = 0.0d0
             grad_arg_x = 0.0d0
             rho = 0.0d0
-            print *,"ComputePhaseFactor lbx,ubx,lby,uby,lbz,ubz ",lbx,ubx,lby,uby,lbz,ubz," nGvec ",nGvec
-
+                !print *,"ComputePhaseFactor "   !,lbx,ubx,lby,uby,lbz,ubz ",lbx,ubx,lby,uby,lbz,ubz," nGvec ",nGvec
+            if (rank==0) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - computing x(r) and rho(r)"
 
         !---    find the Gaussian kernel
             aa = geta(img)
@@ -146,7 +147,7 @@
         !---    compute g.offset, a constant phase factor for all atoms in the supercell. 
         !       strictly speaking shouldn't change much, unless something weird is done to break up the input files.
             do jj = 1,nGvec
-                gdotoff(jj) = aa*dot_product( g(:,jj),getdelta(img) )
+                gdotoff(jj) = aa*dot_product( g(:,jj),delta )
             end do
 
 
@@ -215,7 +216,7 @@
 
             end do
  
-
+            if (rank==0) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - computing x* grad x"
          !---    add the padding around the x stored region by extrapolating the derivative           
              do jy = lby,uby
                  do jx = lbx,ubx

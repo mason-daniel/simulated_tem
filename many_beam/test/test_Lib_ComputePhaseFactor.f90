@@ -155,7 +155,7 @@
 
         Lib_ComputePhaseFactor_DBG = .true.
         timer = Callipers_ctor()
-        call computePhaseFactor( myNatoms,myrt,g, is,grad_arg_x,rho,x )
+        call computePhaseFactor( myNatoms,myrt,g, is,getdelta(as) ,grad_arg_x,rho,x )
         print *,"bounds x ",lbound(grad_arg_x,dim=3),lbound(rho,dim=1),lbound(x,dim=2) , ":" , ubound(grad_arg_x,dim=3),ubound(rho,dim=1),ubound(x,dim=2)
         print *,"bounds y ",lbound(grad_arg_x,dim=4),lbound(rho,dim=2),lbound(x,dim=3) , ":" , ubound(grad_arg_x,dim=4),ubound(rho,dim=2),ubound(x,dim=3)
         print *,"bounds z ",lbound(grad_arg_x,dim=5),lbound(rho,dim=3),lbound(x,dim=4) , ":" , ubound(grad_arg_x,dim=5),ubound(rho,dim=3),ubound(x,dim=4)

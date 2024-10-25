@@ -2,12 +2,6 @@
     module Lib_Gvectors
 !---^^^^^^^^^^^^^^^^^^^
 !*      short module defining a set of g-vectors for imaging
-!*      The g-vectors are defined by integer reflections [hkl] 
-!*      and reciprocal lattice vectors B
-!*          g = B [hkl]
-!*      where B is defined from _conventional_ lattice vectors A 
-!*          B = 2 pi A^-1
-!*      Note that if the conventional lattice vectors have a rotation or strain, then so will the g-vectors
 !*
 !*      Daniel Mason
 !*      (c) UKAEA September 2024
@@ -27,6 +21,8 @@
 
         public      ::      sanityCheck     !   tests whether there is a -g for every g
 
+        public      ::      setR            
+        public      ::      getR        
         public      ::      getn  
         public      ::      getg
         public      ::      gethkl
@@ -35,7 +31,6 @@
         public      ::      getMinusg
         public      ::      isPositiveg             !   returns true if this g-vector has no negative, or is [000], or the negative is later in the set
         public      ::      nPositiveg              !   counts number of "positive" g-vectors in the set
-        public      ::      rotate
         public      ::      isMillerBravais
 
 
@@ -44,8 +39,10 @@
             integer                                     ::      n = 0           !   number of g-vectors in set
             real(kind=real64),dimension(3,3)            ::      B               !   (3,3)   reciprocal lattice vectors
             logical                                     ::      MillerBravais
-            integer,dimension(:,:),pointer              ::      hkl             !   (3,n)   Miller indices of g vectors. Always set, as we need reflection g = B [hkl]
-            integer,dimension(:,:),pointer              ::      hjkl            !   (4,n)   Miller-Bravais indices of g vectors. Only set if needed
+            integer,dimension(:,:),pointer              ::      hkl             !   (3,n)   Miller indices of g vectors
+            integer,dimension(:,:),pointer              ::      hjkl            !   (4,n)   Miller-Bravais indices of g vectors
+            real(kind=real64),dimension(3,3)            ::      R               !   rotation of foil 
+            real(kind=real64),dimension(:,:),pointer    ::      g               !   (3,n)   g-vectors expressed in lab frame, g = R B hkl
             integer,dimension(:),pointer                ::      minusg          !   (n)     which g-vector (if any) in the list is my -g?  g(:,minusg(ii)) = - g(:,ii).  minusg(ii) = 0 if not in set.
         end type
         
@@ -72,13 +69,17 @@
             module procedure        getn0
         end interface
 
-        interface   rotate
-            module procedure        rotate0
-        end interface
-
         interface   sanityCheck
             module procedure        sanityCheck0
-        end interface 
+        end interface
+        
+        interface   getR
+            module procedure        getR0
+        end interface
+
+        interface   setR
+            module procedure        setR0
+        end interface
 
         interface   getg
             module procedure        getg0
@@ -111,22 +112,23 @@
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^    
             type(Gvectors)                     ::      this
             this%n = 0
+            this%R = reshape( (/1,0,0,0,1,0,0,0,1/),(/3,3/) )
             this%B = reshape( (/1,0,0,0,1,0,0,0,1/),(/3,3/) )
             this%MillerBravais = .false.
             nullify(this%hkl)
             nullify(this%hjkl)
-        !    nullify(this%g)
+            nullify(this%g)
             nullify(this%minusg)
             return
         end function Gvectors_null
         
 
-        function Gvectors_ctor0(a_cell_conventional,hkl) result(this)
+        function Gvectors_ctor0(a_cell_conventional,hkl,R) result(this)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
             type(Gvectors)                                  ::      this
             real(kind=real64),dimension(3,3),intent(in)     ::      a_cell_conventional     !   conventional unit cell
             integer,dimension(:,:),intent(in)               ::      hkl                     !   (1:3,1:n) or (1:4,1:n) Miller indices or Miller-Bravais indices.            
-        !    real(kind=real64),dimension(3,3),intent(in),optional        ::      R
+            real(kind=real64),dimension(3,3),intent(in),optional        ::      R
 
             integer         ::      ii
            
@@ -148,11 +150,19 @@
                 nullify(this%hjkl)
                 this%hkl(1:3,1:this%n) = hkl(1:3,1:this%n)
             end if
- 
+
+            allocate(this%g(3,this%n))            
+            
+            if (present(R)) then
+                this%R = R
+            else
+                this%R = reshape( (/1,0,0,0,1,0,0,0,1/),(/3,3/) )
+            end if
+            call setR(this,this%R)
 
             allocate(this%minusg(this%n))             
             do ii = 1,this%n
-                this%minusg(ii) = whichg( this,-getG(this,ii) )
+                this%minusg(ii) = whichg( this,-this%g(:,ii) )
             end do
 
             return
@@ -168,6 +178,7 @@
             type(Gvectors)                                  ::      this
 
             integer         ::      ii,jj,kk,nn
+            real(kind=real64),dimension(:,:),pointer        ::      g_tmp
             integer,dimension(:,:),pointer                  ::      hkl_tmp
             integer,dimension(:),pointer                    ::      minusg_tmp
             real(kind=real64),dimension(3)                  ::      gg
@@ -178,20 +189,19 @@
 
             if (present(doubleSet)) then
                 if (doubleSet) then
-                    !print *,"doubling set ",that%n
                     do ii = 0,that%n
                         do jj = 0,that%n
                             if (ii == 0) then
                                 if (jj == 0) then
                                     gg = 0
                                 else
-                                    gg = - getg(that,jj)
+                                    gg = - that%g(:,jj)
                                 end if
                             else
                                 if (jj == 0) then
-                                    gg = getg(that,ii) 
+                                    gg = that%g(:,ii) 
                                 else
-                                    gg = getg(that,ii) - getg(that,jj)
+                                    gg = that%g(:,ii) - that%g(:,jj)
                                 end if
                             end if
                             
@@ -203,6 +213,10 @@
                                 nn = size(this%minusg)
                                 if (this%n == nn) then
                                     nn = nn * 2
+                                    allocate(g_tmp(3,nn))
+                                    g_tmp(1:3,1:this%n) = this%g(1:3,1:this%n)
+                                    deallocate(this%g)
+                                    this%g => g_tmp
 
                                     allocate(minusg_tmp(nn))
                                     minusg_tmp = LIB_GVECTORS_UNSET
@@ -215,20 +229,21 @@
                                         hkl_tmp(1:4,1:this%n) = this%hjkl(1:4,1:this%n)
                                         deallocate(this%hjkl)
                                         this%hjkl => hkl_tmp
-                                    end if
-
-                                    allocate(hkl_tmp(3,nn))
-                                    hkl_tmp(1:3,1:this%n) = this%hkl(1:3,1:this%n)
-                                    deallocate(this%hkl)
-                                    this%hkl => hkl_tmp    
-                                    
+                                    else
+                                        allocate(hkl_tmp(3,nn))
+                                        hkl_tmp(1:3,1:this%n) = this%hkl(1:3,1:this%n)
+                                        deallocate(this%hkl)
+                                        this%hkl => hkl_tmp    
+                                    end if                                    
                                 end if
 
                             !---    add new g-vector to set. Note add minusg at the end
                                 this%n = this%n + 1
-                                this%hkl(1:3,this%n) = getHkl(this,gg)
+                                this%g(1:3,this%n) = gg
                                 if (this%MillerBravais) then
-                                    this%hjkl(1:4,this%n) = MillerToMillerBravais_plane( this%hkl(1:3,this%n) )
+                                    this%hjkl(1:4,this%n) = MillerToMillerBravais_plane( getHkl(this,this%g(1:3,this%n)) )
+                                else
+                                    this%hkl(1:3,this%n) = getHkl(this,this%g(1:3,this%n))
                                 end if
 
                             end if
@@ -236,7 +251,7 @@
                     end do
 
                     do ii = 1,this%n
-                        this%minusg(ii) = whichg( this,-getg(this,ii) )
+                        this%minusg(ii) = whichg( this,-this%g(:,ii) )
                     end do
  
                     return
@@ -256,6 +271,7 @@
             if (this%n==0) return
             if (this%MillerBravais) deallocate(this%hjkl)
             deallocate(this%hkl)
+            deallocate(this%g)
             deallocate(this%minusg)
             this = Gvectors_null()
             return
@@ -268,22 +284,24 @@
             integer,intent(in),optional         ::      u,o
             integer     ::      uu,oo
             integer     ::      ii
+            real(kind=real64),dimension(3,3)        ::      RB
             uu = 6 ; if (present(u)) uu = u
             oo = 0 ; if (present(o)) oo = o
             write(unit=uu,fmt='(a,i6,a)') repeat(" ",oo)//"Gvectors [n=",this%n,"]"
-            write(unit=uu,fmt='(a,a36,a6,a36)')      repeat(" ",oo+4),"reciprocal lattice vector"  
+            write(unit=uu,fmt='(a,a36,a6,a36)')      repeat(" ",oo+4),"reciprocal lattice vector (crystal)"," ","reciprocal lattice vector (lab)"
+            RB = matmul(this%R,this%B)
             do ii = 1,3
-                write(unit=uu,fmt='(a,3f12.6,a6,3f12.6)')      repeat(" ",oo+4),this%B(ii,:) 
+                write(unit=uu,fmt='(a,3f12.6,a6,3f12.6)')      repeat(" ",oo+4),this%B(ii,:)," ",RB(ii,:)
             end do
             if (this%MillerBravais) then
-                write(unit=uu,fmt='(a,a16,a36,a12)') repeat(" ",oo+4),"Miller-Bravais","g-vector","|g|"
+                write(unit=uu,fmt='(a,a16,a36,a12)') repeat(" ",oo+4),"Miller-Bravais","g-vector (lab frame)","|g|"
                 do ii = 1,this%n
-                    write(unit=uu,fmt='(a,4i4,5f12.6)') repeat(" ",oo+4),this%hjkl(:,ii),getg(this,ii),norm2(getg(this,ii))
+                    write(unit=uu,fmt='(a,4i4,5f12.6)') repeat(" ",oo+4),this%hjkl(:,ii),this%g(:,ii),norm2(this%g(:,ii))
                 end do
             else
-                write(unit=uu,fmt='(a,a12,a36,a12)') repeat(" ",oo+4),"Miller index","g-vector","|g|"
+                write(unit=uu,fmt='(a,a12,a36,a12)') repeat(" ",oo+4),"Miller index","g-vector (lab frame)","|g|"
                 do ii = 1,this%n
-                    write(unit=uu,fmt='(a,3i4,5f12.6)') repeat(" ",oo+4),this%hkl(:,ii),getg(this,ii),norm2(getg(this,ii))
+                    write(unit=uu,fmt='(a,3i4,5f12.6)') repeat(" ",oo+4),this%hkl(:,ii),this%g(:,ii),norm2(this%g(:,ii))
                 end do
             end if
             
@@ -300,6 +318,7 @@
             if (this%n /= that%n) call delete(this)
             this%n = that%n
             this%B = that%B
+            this%R = that%R
             allocate(this%hkl(3,this%n))
             this%hkl(:,:) = that%hkl(:,:)
             this%MillerBravais = that%MillerBravais
@@ -307,27 +326,14 @@
                 allocate(this%hjkl(4,this%n))
                 this%hjkl(:,:) = that%hjkl(:,:)
             end if
+            allocate(this%g(3,this%n))
+            this%g(:,:) = that%g(:,:)
             allocate(this%minusg(this%n))
             this%minusg(:) = that%minusg(:)
             return
         end subroutine clone0
 
-
-
 !-------        
-
-        pure subroutine rotate0(this,R)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      The conventional unit cell has been rotated by R.
-    !*      so the reciprocal lattice has been rotated by R^T
-    !*      apply this rotation to the lattice vectors, so getg() will show the correct new direction
-    !*      CAUTION - you _can_ undo this with rotate(this,transpose(R)), but this will slowly accumulate errors 
-            type(Gvectors),intent(inout)                    ::      this
-            real(kind=real64),dimension(3,3),intent(in)     ::      R
-            this%B = matmul( transpose(R), this%B )
-            return
-        end subroutine rotate0
-
 
         pure logical function isMillerBravais(this)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -337,7 +343,41 @@
             isMillerBravais = this%MillerBravais
             return
         end function isMillerBravais
- 
+
+        pure function getR0(this) result(R)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      returns the rotation matrix
+            type(Gvectors),intent(in)                       ::      this
+            real(kind=real64),dimension(3,3)                ::      R
+            R = this%R 
+            return
+        end function getR0
+
+
+        pure subroutine setR0(this,R)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      sets the rotation matrix, and the g-vectors after rotation
+            type(Gvectors),intent(inout)                       ::      this
+            real(kind=real64),dimension(3,3),intent(in)         ::      R
+            integer             ::      ii
+            this%R = R
+            if (this%MillerBravais) then
+                do ii = 1,this%n
+                    this%g(:,ii) = getg(this,this%hjkl(:,ii))
+                end do
+            else
+                do ii = 1,this%n
+                    this%g(:,ii) = getg(this,this%hkl(:,ii))
+
+                ! this%g(:,ii) = this%B(:,1)*this%hkl(1,ii) + this%B(:,2)*this%hkl(2,ii) + this%B(:,3)*this%hkl(3,ii)
+                ! this%g(:,ii) = this%R(:,1)*this%g(1,ii) + this%R(:,2)*this%g(2,ii) + this%R(:,3)*this%g(3,ii)
+
+                end do
+            end if
+            
+
+            return
+        end subroutine setR0
 
         pure logical function sanityCheck0(this)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -348,7 +388,7 @@
 
             sanityCheck0 = (this%n>0)
             do ii = 1,this%n
-                gg = getg(this,ii)
+                gg = this%g(:,ii)
                 sanityCheck0 = sanityCheck0 .and. ( whichg(this,-gg)>0 )
             end do
             return
@@ -371,7 +411,7 @@
             integer,intent(in)                      ::      i 
             real(kind=real64),dimension(3)          ::      g
             g = 0
-            if ( (i>0).and.(i<=this%n) ) g = this%B(:,1)*this%hkl(1,i) + this%B(:,2)*this%hkl(2,i) + this%B(:,3)*this%hkl(3,i)
+            if ( (i>0).and.(i<=this%n) ) g = this%g(:,i)
             return
         end function getg0
 
@@ -380,10 +420,8 @@
     !*      return all g-vectors
             type(Gvectors),intent(in)               ::      this    
             real(kind=real64),dimension(3,this%n)   ::      g
-            integer             ::      ii
-            do ii = 1,this%n
-                g(:,ii) = getg0(this,ii)
-            end do
+
+            g = this%g
             return
         end function getg1
 
@@ -404,6 +442,7 @@
             end if
 
             g = this%B(:,1)*hkl(1) + this%B(:,2)*hkl(2) + this%B(:,3)*hkl(3)
+            g = this%R(:,1)*g(1) + this%R(:,2)*g(2) + this%R(:,3)*g(3)
             return
         end function getg2
 
@@ -464,10 +503,12 @@
             integer,dimension(3)                        ::      hkl
             real(kind=real64),dimension(3)      ::      xx
             real(kind=real64),dimension(3,3)    ::      iB
+        !---    remove rotation
+            xx(:) = this%R(1,:)*g(1) + this%R(2,:)*g(2) + this%R(3,:)*g(3)
         !---    find inverse reciprocal lattice vectors
             call inverse3Mat(this%B,iB)
         !---    find real reflection
-            xx(:) = iB(:,1)*g(1) + iB(:,2)*g(2) + iB(:,3)*g(3)
+            xx(:) = iB(:,1)*xx(1) + iB(:,2)*xx(2) + iB(:,3)*xx(3)
         !---    find integer reflection
             hkl(:) = nint( xx )
             return
@@ -481,7 +522,7 @@
             integer,intent(in)                      ::      i 
             integer,dimension(4)                    ::      hjkl
             hjkl = 0
-            if ( (this%MillerBravais).and.(i>0).and.(i<=this%n) ) hjkl = this%hjkl(:,i) 
+            if ( (i>0).and.(i<=this%n) ) hjkl = this%hjkl(:,i) 
             return
         end function gethjkl0
 
@@ -491,12 +532,9 @@
             type(Gvectors),intent(in)               ::      this    
             integer,dimension(4,this%n)             ::      hjkl
             integer     ::  ii
-            hjkl = 0
-            if (this%MillerBravais) then
-                do ii = 1,this%n
-                    hjkl(:,ii) = gethjkl0(this,ii)
-                end do
-            end if
+            do ii = 1,this%n
+                hjkl(:,ii) = gethjkl0(this,ii)
+            end do
             return
         end function gethjkl1        
 
@@ -511,7 +549,7 @@
             whichg0 = LIB_GVECTORS_UNSET
             dmin = 1.0d-8           !   don't accept any old rubbish, has to be quite close.
             do ii = 1,this%n
-                dd = norm2( g(:) - getg0(this,ii) )
+                dd = norm2( g(:) - this%g(:,ii) )
                 if (dd<dmin) then
                     dmin = dd
                     whichg0 = ii

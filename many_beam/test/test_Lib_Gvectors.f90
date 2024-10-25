@@ -15,7 +15,7 @@
         integer,dimension(:,:),allocatable          ::      hkl,hjkl
 
 
-        real(kind=real64),dimension(3,3)            ::      R
+        !real(kind=real64),dimension(3,3)            ::      R
         type(Gvectors)                              ::      gv
 
         integer             ::      ii
@@ -32,11 +32,11 @@
         call report(gv)
         print *,""
 
-        R = RotationMatrix_ctor( (/0.0d0,1.0d0,0.0d0/), 30*3.14159265930d0/180 )      
-        call report(R)
-        call setR(gv,R)
-        call report(gv)
-        print *,""
+        !R = RotationMatrix_ctor( (/0.0d0,1.0d0,0.0d0/), 30*3.14159265930d0/180 )      
+        !call report(R)
+        !call setR(gv,R)
+        !call report(gv)
+        !print *,""
 
         latt = Lattice_ctor("hcp")
         call report(latt)

@@ -6,6 +6,7 @@
 !*      The atom space defines a transformation on the atoms 
 !*          rt = R ( r - delta )/a
 !*      to place the atoms into the imaging space
+!*      where r = xyzoffset + a_super [xyz] with [xyz] in range 0:1        
 !*      It also stores the bounds of the region where the atoms will be placed after periodic copies are made,
 !*      in the form of a region
 !*          d1 <= n.rt < d2
@@ -55,7 +56,7 @@
         public      ::      getThickness    !   returns the bounds of the atom box in the imaging space
         public      ::      setDelta        !   computes offset required so after rotation atom in centre of .xyz box is in centre of imaging box
 
-        public      ::      scaledDensity   !   converts atoms per cell into a scaled density range 0:1
+    !    public      ::      scaledDensity   !   converts atoms per cell into a scaled density range 0:1
 
         integer,private                     ::      rank = 0
         integer,private                     ::      nProcs = 1         
@@ -71,7 +72,7 @@
             real(kind=real64),dimension(3,3)    ::      R                   !   rotation matrix
             real(kind=real64),dimension(3)      ::      n0                  !   normal vector defining plane of foil, before rotation by R
             real(kind=real64),dimension(3)      ::      n                   !   normal vector defining plane of foil, including rotation. n = R n0 
-            real(kind=real64)                   ::      L                   !   thickness of foil (d2-d1) = L cos(theta)
+            real(kind=real64)                   ::      L                   !   thickness of foil. If we are working with planes, (d2-d1) = L cos(theta). But we can also set this for an explicit surface using atom positions.
         end type 
 
 
@@ -180,7 +181,7 @@
 
 
         function AtomSpace_ctor1(a,xyzoffset,a_super,R,x) result(this)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^     
             type(AtomSpace)                                         ::      this
             real(kind=real64),intent(in)                            ::      a
             real(kind=real64),dimension(3),intent(in)               ::      xyzoffset
@@ -255,7 +256,7 @@
             integer,intent(out)                         ::      Nx,Ny,Nz
             real(kind=real64),intent(in),optional       ::      theta
              
-            real(kind=real64),dimension(3,8)           ::      rt
+            real(kind=real64),dimension(3,8)           ::      cornert
 
             integer             ::      ii,ix,iy,iz , dNxy
             real(kind=real64)   ::      minx,maxx,in3 , d1,d2 , tantheta
@@ -270,20 +271,20 @@
                 do iy = 0,1
                     do ix = 0,1
                         ii = ii + 1
-                        rt(:,ii) = this%xyzoffset(:) + this%a_super(:,1)*ix + this%a_super(:,2)*iy + this%a_super(:,3)*iz
-                        rt(:,ii) = toImagingSpace( this,rt(:,ii) ) 
+                        cornert(:,ii) = this%xyzoffset(:) + this%a_super(:,1)*ix + this%a_super(:,2)*iy + this%a_super(:,3)*iz
+                        cornert(:,ii) = toImagingSpace( this,cornert(:,ii) ) 
                     end do
                 end do
             end do
  
         !---    this defines the max/min x-y- extents, and so Nx,Ny
-            minx = minval( rt(1,1:8) ) ; maxx = maxval( rt(1,1:8) ) ; Nx = ceiling( maxx - minx )
-            minx = minval( rt(2,1:8) ) ; maxx = maxval( rt(2,1:8) ) ; Ny = ceiling( maxx - minx )
+            minx = minval( cornert(1,1:8) ) ; maxx = maxval( cornert(1,1:8) ) ; Nx = ceiling( maxx - minx )
+            minx = minval( cornert(2,1:8) ) ; maxx = maxval( cornert(2,1:8) ) ; Ny = ceiling( maxx - minx )
  
 
 
 
-        !---    Now points on the foil surface are n.r = d, with d1 = 0 and d2 = n.r = n0.a_3 / a
+        !---    Now points on the foil surface are n.rt = d, with d1 = 0 and d2 = n.rt = n0.a_3 / a
         !       points on the edge of the imaging space are at x=0,x=Nx etc
         !       so find the lines of intersection between these planes, and look for min/max z 
         !       conveniently, these points will also be at y=0,y=Ny etc, so I only have 8 points to check.
@@ -337,7 +338,7 @@
             integer,intent(in)                          ::      Nx,Ny
             integer,intent(in)                          ::      nBuf                !   may need some points outside imaging space for buffer region
             integer,intent(out)                         ::      np
-            real(kind=real64),dimension(:,:),intent(inout)  ::      xtp             !   (3,9)
+            real(kind=real64),dimension(:,:),intent(inout)      ::      xtp         !   (3,9) may need up to 9 replicas of input point x. Though 1 is most probable, and 4 is a corner.
 
             real(kind=real64),dimension(3)      ::      xx
             real(kind=real64),parameter         ::      TOL = 1.0d-6
@@ -353,7 +354,6 @@
                     if (ok) then
                         np = np + 1
                         xtp(:,np) = xx(:)
-                        !if (xtp(3,np)<-TOL) print *,"z<0 ",x,ix,iy,xx
                     end if
                 end do
             end do
@@ -375,25 +375,25 @@
         end subroutine periodicCopies1
 
 
-        pure real(kind=real64) function scaledDensity(rho,rho0)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      given the density per imaging space rho, and the expected average density rho0,
-    !*      compute a scaled density in the range 0:1, where 
-            real(kind=real64),intent(in)                ::      rho
-            real(kind=real64),intent(in)                ::      rho0
+    !     pure real(kind=real64) function scaledDensity(rho,rho0)
+    ! !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ! !*      given the density per imaging space rho, and the expected average density rho0,
+    ! !*      compute a scaled density in the range 0:1, where 
+    !         real(kind=real64),intent(in)                ::      rho
+    !         real(kind=real64),intent(in)                ::      rho0
 
-            real(kind=real64)               ::      xx
-            if (rho < 0) then       !   not sure how this can possibly happen!?
-                scaledDensity = 0.0d0
-            else if (rho > rho0) then
-                scaledDensity = 1.0d0
-            else 
-                xx = rho/rho0
-                scaledDensity = xx*xx*xx*(10 + xx*(-15+6*xx))
-            end if
+    !         real(kind=real64)               ::      xx
+    !         if (rho < 0) then       !   not sure how this can possibly happen!?
+    !             scaledDensity = 0.0d0
+    !         else if (rho > rho0) then
+    !             scaledDensity = 1.0d0
+    !         else 
+    !             xx = rho/rho0
+    !             scaledDensity = xx*xx*xx*(10 + xx*(-15+6*xx))
+    !         end if
 
-            return
-        end function scaledDensity
+    !         return
+    !     end function scaledDensity
 
 !******************************************************************************
 !
@@ -422,7 +422,7 @@
         pure function getxyzoffset0(this) result (xyzoffset)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             type(AtomSpace),intent(in)             ::      this
-            real(kind=real64),dimension(3)          ::      xyzoffset
+            real(kind=real64),dimension(3)         ::      xyzoffset
             xyzoffset = this%xyzoffset
             return
         end function getxyzoffset0
@@ -480,6 +480,7 @@
         pure subroutine setR0(this,R)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      sets the rotation matrix, and the normal to the foil after rotation. 
+    !*      note that this works out the change in thickness of the planes, but then uses this to modify the thickness this%L which may have been set by atom positions.        
             type(AtomSpace),intent(inout)                       ::      this
             real(kind=real64),dimension(3,3),intent(in)         ::      R
 
@@ -502,7 +503,10 @@
         pure subroutine setDelta0(this,Nx,Ny,Nz)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      given the imaging space size, compute displacmeent required so atom in middle of box is in middle of imaging space
-    !*
+    !*      The atoms are input at positions r = xyzoffset + a_super [xyz], with [xyz] in range 0:1
+    !*      they are scaled and transformed to 
+    !*          rt = R ( r - delta )/a
+    !*      return delta such that an atom in the centre of the xyz file ends up at the centre of the imaging space.
     !*          R( off + (a1+a2+a3)/2 - delta )/a = [Nx,Ny,Nz]/2
     !*          delta = off + (a1+a2+a3)/2 - a R^T [Nx,Ny,Nz]/2 
     !*      
@@ -533,19 +537,24 @@
 
         pure real(kind=real64) function getThickness1(this,R)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      compute the foil thickness assuming a further rotation by R
+    !*      compute the foil thickness assuming a further virtual tilt by R
+    !*      note that this works out the change in thickness of the planes, but then actually computes using this%L which may have been set by atom positions.
             type(AtomSpace),intent(in)                              ::      this
             real(kind=real64),dimension(3,3),intent(in)             ::      R
 
             real(kind=real64),dimension(3,3)            ::      RR      !   new rotation
             real(kind=real64),dimension(3)              ::      nn      !   new normal
             real(kind=real64)                           ::      a3dotn0 
-            
+            real(kind=real64)                   ::          L_before,L_after
+
+            L_before = getThickness(this)
             RR = matmul(R,this%R)
             nn(1:3) = RR(1:3,1)*this%n0(1) + RR(1:3,2)*this%n0(2) + RR(1:3,3)*this%n0(3) 
 
             a3dotn0 = dot_product( this%a_super(1:3,3) , this%n0 )  
-            getThickness1 = a3dotn0/nn(3)
+            L_after = a3dotn0/nn(3)
+            
+            getThickness1 = this%L * L_after / L_before
             return
         end function getThickness1
 
