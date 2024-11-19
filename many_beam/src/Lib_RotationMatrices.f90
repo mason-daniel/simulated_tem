@@ -70,6 +70,7 @@
         interface rotateVector
             module procedure    rotateVector0
             module procedure    rotateVector1
+            module procedure    rotateVector32
         end interface
         
         
@@ -449,6 +450,17 @@
             end do
             return
         end function rotateVector1    
+        
+       
+        pure function rotateVector32(R,x) result(y)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      return y = Rx
+            real(kind=real64),dimension(3,3),intent(in)     ::  R
+            real(kind=real32),dimension(3),intent(in)       ::  x
+            real(kind=real32),dimension(3)                  ::  y
+            y(1:3) = real( R(1:3,1)*x(1) + R(1:3,2)*x(2) + R(1:3,3)*x(3) , kind=real32 )
+            return
+        end function rotateVector32    
         
      
         subroutine completeBasis0( z,x,y )

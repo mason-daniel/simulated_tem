@@ -185,7 +185,7 @@
             complex(kind=real64)                            ::      Vg
             
             type(Lattice)                                   ::      latt
-            real(kind=real64)                               ::      omega 
+            real(kind=real64)                               ::      omega , aa
             real(kind=real64)                               ::      ss , gdotr
             real(kind=real64),dimension(3)                  ::      rr
             real(kind=real64),dimension(3)                  ::      gg
@@ -201,10 +201,11 @@
                 stop
             end if            
             latt = Lattice_ctor(latticename)
-            if (getLatticeType(latt) == LATTICE_HCP) call setCoverA(latt,a0(3)/a0(1))
+            aa = a0(1)                          !   characteristic length scale for the lattice
+            if (getLatticeType(latt) == LATTICE_HCP) call setCoverA(latt,a0(3)/aa)
 
-        !---    find the reciprocal lattice vectors             
-            bb = getReciprocalLatticeVectors(latt) / a0(1)
+        !---    find the reciprocal lattice vectors. Note the reciprocal lattice stored in latt is for the crystal type, so need to set a length scale too.
+            bb = getReciprocalLatticeVectors(latt) / aa
         
         !---    find the reflection considered
             gg = bb(:,1)*hkl(1) + bb(:,2)*hkl(2) + bb(:,3)*hkl(3) 
@@ -218,27 +219,20 @@
             nMotif = getConventionalnMotif(latt)
             Vg = 0
             do ii = 1,nMotif
-                rr(:) = a0(1) * getConventionalMotif( latt,ii,removeOffset=.true. )
-                gdotr = dot_product( gg,rr )
-                !print *,"motif point ",ii,rr," g.r ",gdotr," exp[ -i g.r ]",exp( complex(0,-gdotr) )
-                cDT = complexDoyleTurnerSum( a(:,ii),b(:,ii), dwf, ss )          
+                rr(:) = aa * getConventionalMotif( latt,ii,removeOffset=.true. )    !   remove offset to return motif point 1 at [000] not [¼¼¼]
+                gdotr = dot_product( gg,rr )                
                 expgr = complex( cos(gdotr),-sin(gdotr) )                           !   Exp( -i g.r )
+                cDT = complexDoyleTurnerSum( a(:,ii),b(:,ii), dwf, ss )          
                 Vg = Vg + expgr * cDT
             end do
 
 
 
         !---    find the volume per conventional cell and scale Vg
-            omega = getOmega0(latt) * a0(1)**3 * getConventionalnMotif( latt )
+            omega = getOmega0(latt) * aa**3 
 
-            Vg = Vg * (HBAR*HBAR/(2*ME))*(4*PI/Omega)
+            Vg = Vg * (HBAR*HBAR/(2*ME))*(4*PI/(nMotif*Omega))
 
-
-            ! print *,"Lib_CrystalStructureFactor::crystalStructureFactor1 info"
-            ! print *,"   g-vector [hkl]  ",hkl
-            ! print *,"   g-vector (A^-1) ",gg 
-            ! print *,"   omega    (A^3)  ",omega 
-            
            
  
             return
@@ -248,14 +242,16 @@
                     
             
         pure function complexDoyleTurnerSum( a,b, dwf, s ) result( f )            
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^        
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^       
     !*      find the Doyle-Turner sum with complex coefficients
     !*          f = sum_i Re(a)_i Exp[ - (Re(a)_i + dwf) s^2 ] 
     !*            + i sum_i Im(a)_i Exp[ - (Im(a)_i + dwf/2 ) s^2 ] 
     !*      for complex input coefficients a_i,b_i 
     !*      and real Debye-Waller factor dwf
     !*      note that s = g/(4 pi)
-    
+    !*      see Acta Cryst. (1996). A52, 456-470 equation 13
+    !*      ( note that the constant term and exp[ -i g.r ] terms are needed to compute Vg )
+
             complex(kind=real64),dimension(:),intent(in)    ::      a,b     !   complex Doyle-Turner coefficient
             real(kind=real64),intent(in)                    ::      dwf     !   Debye-Waller factor
             real(kind=real64),intent(in)                    ::      s       !   scattering angle s = g/4pi = sin(theta)/lambda

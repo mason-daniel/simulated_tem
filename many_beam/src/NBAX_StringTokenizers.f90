@@ -80,10 +80,12 @@
         interface   Parse
             module procedure            ParseIntArray1
             module procedure            ParseRealArray1
+            module procedure            ParseDoubleArray1
             module procedure            ParseLogicalArray
             module procedure            ParseCharacterArray
             module procedure            ParseInt
             module procedure            ParseReal
+            module procedure            ParseDouble
 !            module procedure            ParseComplex
             module procedure            ParseLogical
         end interface
@@ -306,7 +308,7 @@
 !             return
 !         end subroutine ParseRealArray
 
-        subroutine ParseRealArray1(dummy,ra,n)
+        subroutine ParseDoubleArray1(dummy,ra,n)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      Parse the character string dummy into an array of n reals
     !*      New version
@@ -324,6 +326,35 @@
             do ii = 1,1000000
                 if (.not. hasMoreTokens(stok)) exit
                 call nextToken(stok,tok)
+                call ParseDouble(tok,rr,ok)
+                if (ok) then
+                    n = n + 1
+                    ra(n) = rr
+                    if (n==size(ra)) return
+                end if
+            end do
+            return
+        end subroutine ParseDoubleArray1
+
+
+        subroutine ParseRealArray1(dummy,ra,n)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      Parse the character string dummy into an array of n reals
+    !*      New version
+            character(len=*),intent(in)         ::      dummy
+            real(kind=real32),dimension(:),intent(inout)     ::      ra
+            integer,intent(out)                 ::      n
+
+            type(StringTokenizer)       ::      stok
+            character(len=32)           ::      tok
+            logical                     ::      ok
+            integer                     ::      ii
+            real(kind=real32)           ::      rr
+            stok = StringTokenizer_ctor(trim(dummy)," ,;"//TAB_CHARACTER//CR_CHARACTER//NULL_CHARACTER)
+            n = 0
+            do ii = 1,1000000
+                if (.not. hasMoreTokens(stok)) exit
+                call nextToken(stok,tok)
                 call ParseReal(tok,rr,ok)
                 if (ok) then
                     n = n + 1
@@ -336,7 +367,7 @@
 
 
 
-        subroutine ParseReal(text,r,ok)
+        subroutine ParseDouble(text,r,ok)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      read the next real(kind=real64) number from the string "text"
     !*      cut this from text on exit
@@ -452,6 +483,130 @@
 
         !---    put it all together
             rr = ( xaaa + xbbb ) * (10.0d0**iccc)
+            if (aaaa(1:1)=="-") rr = -rr
+            if (abs(rr)==0) rr = 0
+            if (present(ok)) ok = .true.
+            r = rr
+            return
+        end subroutine ParseDouble
+
+
+        subroutine ParseReal(text,r,ok)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      read the next real(kind=real64) number from the string "text"
+    !*      cut this from text on exit
+            character(len=*),intent(in)         ::      text
+            real(kind=real32),intent(inout)     ::      r
+            logical,intent(out),optional        ::      ok
+            character(len=64)           ::      str
+            character(len=32)           ::      aaaa,bbbb,cccc
+            real(kind=real32)           ::      xaaa,xbbb
+            integer                     ::      iccc
+            integer                     ::      ii,jj
+            logical                     ::      inNum
+            real(kind=real32)           ::      xx,rr
+            character(len=1),dimension(17),parameter    ::      NUMBERS =           &
+                    (/ "0","1","2","3","4","5","6","7","8","9",                     &
+                       ".","+","-",                                                 &
+                       "e","E","d","D"                                              /)
+            character(len=1)            ::      cc
+
+
+        !---    extract "possible" real(kind=real64) from text
+            jj = 0
+            inNum = .false.
+            str = ""
+            rr = 0.0
+            if (present(ok)) ok = .false.
+            do ii = 1,len(text)
+                cc = text(ii:ii)
+                if (.not. inNum) then
+                    if (cc==" ") cycle     !   not hit anything reasonable yet
+                end if
+                if (any(cc==NUMBERS)) then
+                    inNum = .true.
+                    jj = jj + 1
+                    str(jj:jj) = cc
+                    if (jj == len(str)) exit
+                else
+                    exit
+                end if
+            end do
+            if (jj == 0) return     !   failed to find anything
+            rr = 0.0
+        !---    convert "D"s to standard "e" form
+            do ii = 1,jj
+                cc = str(ii:ii)
+                select case(cc)
+                    case ("d")
+                        cc = "e"
+                    case ("D")
+                        cc = "e"
+                    case ("E")
+                        cc = "e"
+                end select
+                str(ii:ii) = cc
+            end do
+
+        !---    attempt to parse into format
+        !               aaaa.bbbb e cccc
+        !       options are  1   aaaa
+        !                    2   aaaa e cccc
+        !                    3   .bbbb
+        !                    4   .bbbb e cccc
+        !                    5   aaaa.bbbb
+        !                    6   aaaa.bbbb e cccc
+            aaaa = "0"
+            bbbb = "0"
+            cccc = "0"
+            ii = index(str,".")
+            jj = index(str,"e")
+            if (ii == 1) then       !   3,4
+                if (jj>1) then      !   4
+                    bbbb = str(2:jj-1)
+                    cccc = str(jj+1:len_trim(str))
+                else                !   3
+                    bbbb = str(2:len_trim(str))
+                end if
+            else if (ii>1) then     !   5,6
+                aaaa = str(1:ii-1)
+                if (jj>1) then      !   6
+                    bbbb = str(ii+1:jj-1)
+                    cccc = str(jj+1:len_trim(str))
+                else                !   5
+                    bbbb = str(ii+1:len_trim(str))
+                end if
+            else                    !   1,2
+                if (jj>1) then      !   2
+                    aaaa = str(1:jj-1)
+                    cccc = str(jj+1:len_trim(str))
+                else                !   1
+                    aaaa = str(1:len_trim(str))
+                end if
+            end if
+
+        !---    convert to integers
+            xaaa = 0.0d0
+            do ii = 1,len_trim(aaaa)
+                cc = aaaa(ii:ii)
+                jj = ( iachar(aaaa(ii:ii)) - iachar("0") )
+                if ((jj>=0).and.(jj<=9)) xaaa = xaaa*10 + jj
+            end do
+            iccc = 0
+            do ii = 1,len_trim(cccc)
+                jj = ( iachar(cccc(ii:ii)) - iachar("0") )
+                if ((jj>=0).and.(jj<=9)) iccc = iccc*10 + jj
+            end do
+            if (cccc(1:1)=="-") iccc = -iccc
+            xx = 1.0
+            xbbb = 0.0
+            do ii = 1,len_trim(bbbb)
+                xx = xx * 0.1
+                xbbb = xbbb + xx*( iachar(bbbb(ii:ii)) - iachar("0") )
+            end do
+
+        !---    put it all together
+            rr = ( xaaa + xbbb ) * (10.0**iccc)
             if (aaaa(1:1)=="-") rr = -rr
             if (abs(rr)==0) rr = 0
             if (present(ok)) ok = .true.

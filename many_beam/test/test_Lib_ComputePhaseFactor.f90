@@ -32,18 +32,18 @@
         real(kind=real64),dimension(3,3)        ::      RR,eps              !   rotation matrix,strain matrix
         integer                 ::      Nx,Ny,Nz , Nx0,Ny0,Nz0 , dNxy,dNz
         integer             ::          mynAtoms
-        real(kind=real64),dimension(:,:),pointer        ::      myrt
+        real(kind=real32),dimension(:,:),pointer        ::      myrt
 
         integer             ::          ii,jj,np
         real(kind=real64),dimension(3,9)                ::      rtp  
-        real(kind=real64),dimension(:,:),pointer        ::      myrt_tmp
+        real(kind=real32),dimension(:,:),pointer        ::      myrt_tmp
 
         integer,dimension(2,3)                          ::      bb
         real(kind=real64),dimension(3,NG)               ::      g
-        complex(kind=real64),dimension(:,:,:,:),pointer      ::      x       !   (1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
-        real(kind=real64),dimension(:,:,:,:,:),pointer    ::      grad_arg_x       !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
-        real(kind=real64),dimension(:,:,:),pointer      ::      rho
-        real(kind=real64),dimension(12)                  ::      dat
+        !complex(kind=real32),dimension(:,:,:,:),pointer ::      x       !   (1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
+        real(kind=real32),dimension(:,:,:,:,:),pointer  ::      grad_arg_x       !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
+        real(kind=real32),dimension(:,:,:),pointer      ::      rho
+        real(kind=real64),dimension(12)                 ::      dat
         integer                                         ::      ix,iy,iz
 
         
@@ -121,7 +121,7 @@
         mynAtoms = 0
         
         do ii = 1,NATOMS
-            call periodicCopies(as,is,r(:,ii),np,rtp)
+            call periodicCopies(as,is,real( r(:,ii),kind=real32 ),np,rtp)
             do jj = 1,np
                 if (inMyCell(is,rtp(:,jj),buffered=.true.)) then
                     mynAtoms = mynAtoms + 1
@@ -131,7 +131,7 @@
                         deallocate(myrt)
                         myrt => myrt_tmp
                     end if
-                    myrt(1:3,mynAtoms) = rtp(:,jj)
+                    myrt(1:3,mynAtoms) = real( rtp(:,jj),kind=real32 )
                 end if
             end do
         end do
@@ -150,15 +150,18 @@
         !allocate(x(NG,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))
         allocate(rho(bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))        
         allocate(grad_arg_x(3,NG,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))
-        allocate(x(NG,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))        
+        !allocate(x(NG,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))        
         !print *,"rank ",rank," start computePhaseFactor"
 
         Lib_ComputePhaseFactor_DBG = .true.
         timer = Callipers_ctor()
-        call computePhaseFactor( myNatoms,myrt,g, is,getdelta(as) ,grad_arg_x,rho,x )
-        print *,"bounds x ",lbound(grad_arg_x,dim=3),lbound(rho,dim=1),lbound(x,dim=2) , ":" , ubound(grad_arg_x,dim=3),ubound(rho,dim=1),ubound(x,dim=2)
-        print *,"bounds y ",lbound(grad_arg_x,dim=4),lbound(rho,dim=2),lbound(x,dim=3) , ":" , ubound(grad_arg_x,dim=4),ubound(rho,dim=2),ubound(x,dim=3)
-        print *,"bounds z ",lbound(grad_arg_x,dim=5),lbound(rho,dim=3),lbound(x,dim=4) , ":" , ubound(grad_arg_x,dim=5),ubound(rho,dim=3),ubound(x,dim=4)
+        call computePhaseFactor( myNatoms,myrt,g, is,getdelta(as),bb(1,3),bb(2,3) ,grad_arg_x,rho )
+        print *,"bounds x ",lbound(grad_arg_x,dim=3),lbound(rho,dim=1) , ":" , ubound(grad_arg_x,dim=3),ubound(rho,dim=1) 
+        print *,"bounds y ",lbound(grad_arg_x,dim=4),lbound(rho,dim=2) , ":" , ubound(grad_arg_x,dim=4),ubound(rho,dim=2) 
+        print *,"bounds z ",lbound(grad_arg_x,dim=5),lbound(rho,dim=3) , ":" , ubound(grad_arg_x,dim=5),ubound(rho,dim=3) 
+        ! print *,"bounds x ",lbound(grad_arg_x,dim=3),lbound(rho,dim=1),lbound(x,dim=2) , ":" , ubound(grad_arg_x,dim=3),ubound(rho,dim=1),ubound(x,dim=2)
+        ! print *,"bounds y ",lbound(grad_arg_x,dim=4),lbound(rho,dim=2),lbound(x,dim=3) , ":" , ubound(grad_arg_x,dim=4),ubound(rho,dim=2),ubound(x,dim=3)
+        ! print *,"bounds z ",lbound(grad_arg_x,dim=5),lbound(rho,dim=3),lbound(x,dim=4) , ":" , ubound(grad_arg_x,dim=5),ubound(rho,dim=3),ubound(x,dim=4)
 
         call pause(timer)
         t_phaseField = elapsed(timer)
@@ -185,9 +188,9 @@
             xyz = XYZFile_ctor(filename)
             call setAtomNames(xyz,(/"int","buf","g.r"/))
             call setnAtoms(xyz,mynAtoms+size(rho,dim=1)*size(rho,dim=2)*size(rho,dim=3))
-            call setColumn_Description(xyz,Nx,Ny,Nz,RotationMatrix_identity,":grad_arg(x):R:3:rho:R:1:Re(x):R:1:Im(x):R:1" )
+            call setColumn_Description(xyz,Nx,Ny,Nz,RotationMatrix_identity,":grad_arg(x):R:3:rho:R:1 " )
             call setnHeaderLines(xyz,0)
-            call setnColumns(xyz,9)
+            call setnColumns(xyz,6)
             dat = 0
             do ii = 1,mynAtoms
                 if (inMyCell(is,myrt(:,ii),buffered=.false.)) then
@@ -207,10 +210,10 @@
                         dat(1:3) = (/ ix,iy,iz /) + 0.5d0              !   +0.5 because x nodes are at (1/2,1/2,1/2) positions
                         dat(4:6) = grad_arg_x(:,1,ix,iy,iz)
                         !dat(5) = aimag( x(2,ix,iy,iz) )
-                        dat(7) = rho(ix,iy,iz)
-                        dat(8) = real(x(1,ix,iy,iz))
-                        dat(9) = aimag(x(1,ix,iy,iz))
-                        call setColumns(xyz,ii,dat(1:9))
+                        ! dat(7) = rho(ix,iy,iz)
+                        ! dat(8) = real(x(1,ix,iy,iz))
+                        ! dat(9) = aimag(x(1,ix,iy,iz))
+                        call setColumns(xyz,ii,dat(1:6))
                     end do
                 end do
             end do

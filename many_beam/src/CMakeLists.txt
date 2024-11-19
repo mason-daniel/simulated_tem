@@ -28,6 +28,7 @@ target_include_directories(CommandLine
 
 #Split utility code into its own lib
 add_library(CSF_Utils STATIC
+    Lib_RandomSeed.f90
     Lib_GoldenSection.f90
     Lib_RelativisticElectrons.f90
     Lib_Elements.f90
@@ -67,8 +68,7 @@ target_link_libraries(PCA_Png ${PNG_LIBRARY})
     
 #Split utility code into its own lib
 add_library(ManyBeam_Utils STATIC
-    Lib_RandomSeed.f90
-    Lib_XYZFiles.f90
+    Lib_XYZFiles32.f90
     Lib_FactoriseParallel.f90
     Lib_RotationMatrices.f90
     Lib_Quaternions.f90

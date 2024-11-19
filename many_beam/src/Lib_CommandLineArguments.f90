@@ -249,7 +249,7 @@
             integer             ::      kk
             character(len=256)  ::      cla
             has = .false.
-            do kk = 1,command_argument_count()
+            do kk = this%ignore+1,command_argument_count()
                 call get_command_argument( kk,cla )
                 if ( (trim(cla)=="-h").or.(trim(cla)=="-help").or.(trim(cla)=="--h").or.(trim(cla)=="--help") ) then 
                     has = .true.

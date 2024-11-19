@@ -50,7 +50,6 @@
         public      ::      getNx,getNy,getNz
         public      ::      getMx,getMy        
         public      ::      getBounds
-        !public      ::      myNeighbours
         public      ::      sendrecv
         public      ::      whoseBlock
         public      ::      blockExtent
@@ -139,6 +138,7 @@
  
         interface   inMyCell
             module procedure        inMyCell0
+            module procedure        inMyCell1
         end interface
  
 
@@ -294,18 +294,29 @@
             return
         end function inMyCell0
 
+        pure logical function inMyCell1(this,xt,buffered)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      given the reduced space position
+    !*          xt = R (x-delta)/a
+    !*      return true if the atom is in a cell I am responsible for.
+    !*      optionally return true if within the buffered region
+            type(ImagingSpace),intent(in)               ::      this
+            real(kind=real32),dimension(:),intent(in)   ::      xt
+            logical,intent(in)                          ::      buffered
+            inMyCell1 = inMyCell0(this,real(xt,kind=real64),buffered)
+
+            return
+        end function inMyCell1        
+
         subroutine setMyBounds(this)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      given my rank and number of processes, determine the block of cells I am responsible for 
     !*      note that this will _not_ include any buffer
             type(ImagingSpace),intent(inout)            ::      this
 
-            !integer         ::          Mx,My                       !   number of blocks in x and y dimension 
             integer         ::          Cx,Cy                       !   size of each block
             integer         ::          pp,ix,iy                    !   processor number, position in grid
             
-            ! call FactoriseParallel( this%Nx,this%Ny,nProcs,this%Mx,this%My )            
-            ! allocate(this%p(0:this%Mx-1,0:this%My-1))
             Cx = ceiling(real(this%Nx)/this%Mx)
             Cy = ceiling(real(this%Ny)/this%My)
 

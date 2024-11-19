@@ -134,11 +134,11 @@
                         ,118.71d0,132.9054520d0,137.33d0,138.9055d0,140.116d0,157.2d0,178.49d0,180.9479d0,183.84d0,186.207d0,190.2d0,192.22d0    &
                         ,195.08d0,196.96657d0,204.383d0,207d0,232.038d0  /)
         
-        logical,public      ::      LIBXYZ_DBG = .false.                                                                            
-        integer,public,parameter      ::      LIBXYZ_COL_STRING = 0
-        integer,public,parameter      ::      LIBXYZ_COL_FLOAT = 1
-        integer,public,parameter      ::      LIBXYZ_COL_UINT = 2 
-        integer,public,parameter      ::      LIBXYZ_COL_INT = 3
+        logical,public              ::      LIBXYZ_DBG = .false.                                                                            
+        integer,public,parameter    ::      LIBXYZ_COL_STRING = 0
+        integer,public,parameter    ::      LIBXYZ_COL_FLOAT = 1
+        integer,public,parameter    ::      LIBXYZ_COL_UINT = 2 
+        integer,public,parameter    ::      LIBXYZ_COL_INT = 3
         
         character(len=5),dimension(0:3),private,parameter  ::  LIBXYZ_COL_NAME = (/ "str  ","float","uint ","int  " /)                                                                                     
         
@@ -157,7 +157,7 @@
             character(len=XYZFILE_COMMENTLINELENGTH)                            ::      column_description
             character(len=XYZFILE_ATOMNAMELENGTH),dimension(:),pointer          ::      atomName        !   (1:nAtomNames)
             integer,dimension(:),pointer                                        ::      atom            !   (1:nAtoms)
-            real(kind=real64),dimension(:,:),pointer                            ::      dat             !   (1:nColumns,1:nAtoms)
+            real(kind=real32),dimension(:,:),pointer                            ::      dat             !   (1:nColumns,1:nAtoms)
             integer,dimension(:),pointer                                        ::      col_dataType
             logical                 ::      lammpsFormat
         end type
@@ -271,6 +271,7 @@
             module procedure        setColumns0
             module procedure        setColumns1
             module procedure        setColumns2
+            module procedure        setColumns3                
         end interface
 
         interface   getColumns
@@ -511,7 +512,7 @@
             type(XYZFile),intent(inout)     ::      this
             integer,intent(in)              ::      nAtoms,nAtomNames,nColumns,nHeaderLines
             real                            ::      mem
-            mem = ( 8.0 * nAtoms ) * ( nColumns + 0.5 )         !   8 bytes per column, + 4 bytes for type
+            mem = ( 4.0 * nAtoms ) * ( nColumns + 1 )         !   4 bytes per column + type
             print *,"Lib_XYZFiles::ensureAdequateStorage info - allocating ",mem / (1024.0*1024.0)," Mb for file read"
             call setNColumns( this,nColumns,nAtoms )
             call setNHeaderLines( this,nHeaderLines )
@@ -538,7 +539,7 @@
             character(len=4096)     ::      longDummy
             character(len=1)        ::      letter
 
-            real(kind=real64),dimension(1000)   ::  dat
+            real(kind=real32),dimension(1000)   ::  dat
 
 
            !ii = index(trim(this%filename),".lammps",back=.true.)
@@ -1201,7 +1202,7 @@
                     allokdat = allokdat .and. (ioerr==0)
                     !xx(1:3) = xx(1:3) - xmin(1:3)
                     
-                    this%dat(1:3,ii) = xx(1:3)
+                    this%dat(1:3,ii) = real(xx(1:3),kind=real32)
                     this%atom(ii) = nn
 !                 
 !                     read(unit=uu,fmt=*,iostat=ioerr) jj,nn,this%dat(1:this%nColumns,ii)
@@ -1244,11 +1245,12 @@
             
             character(len=256)                              ::      dummy                         
             integer,dimension(:),allocatable                ::      nn 
-            real(kind=real64),dimension(1:this%nColumns)    ::      datmax 
+            real(kind=real32),dimension(1:this%nColumns)    ::      datmax 
             real(kind=real64),dimension(9)                  ::      a_super
             logical                                         ::      triclinic
             integer,dimension(0:8)                          ::      col_type
             type(StringTokenizer)                           ::      stok
+            real(kind=real32),dimension(8)                  ::      datline
            
             uu = findGoodUnit()
             f = getNumberedFilename(this)
@@ -1296,13 +1298,13 @@
                     write(unit=uu,fmt='(a)') "Atoms # atomic" 
                     write(unit=uu,fmt='(a)') "" 
                     dummy = ""
-                    a_super = 0.0d0
+                    datline = 0.0d0
                     col_type = (/ LIBXYZ_COL_STRING,LIBXYZ_COL_UINT,LIBXYZ_COL_UINT,LIBXYZ_COL_FLOAT,LIBXYZ_COL_FLOAT,LIBXYZ_COL_FLOAT,LIBXYZ_COL_UINT,LIBXYZ_COL_UINT,LIBXYZ_COL_UINT /)                    
                     allocate(nn(0:8))
                     nn(0) = 0
                     nn(1) = ceiling(log10(1.000001d0*this%nAtoms))
                     nn(2) = ceiling(log10(1.000001d0*this%nAtomNames)) 
-                    datmax = 1.000001d0
+                    datmax = 1.000001 
                     do ii = 1,this%nAtoms
                         if (present(mask)) then
                             if (.not. mask(ii)) cycle
@@ -1322,11 +1324,11 @@
                             if (.not. mask(ii)) cycle
                         end if
                         mm = mm + 1
-                        a_super(1:5) = (/   real(mm,kind=real64),              &
-                                            real(this%atom(ii),kind=real64),   &
+                        datline(1:5) = (/   real(mm,kind=real32),              &
+                                            real(this%atom(ii),kind=real32),   &
                                             this%dat(1,ii),this%dat(2,ii),this%dat(3,ii) /) 
                                      
-                        dummy = opLine( "",a_super(1:8),nn , col_type ) 
+                        dummy = opLine( "",datline,nn , col_type ) 
                         write(unit=uu,fmt='(a)') trim(dummy)
                     end do
                     write(unit=uu,fmt='(a)') "" 
@@ -1353,7 +1355,7 @@
                     do ii = 1,this%nAtomNames
                         nn(0) = max(nn(0),len_trim(this%atomName(ii)))
                     end do
-                    datmax = 1.000001d0
+                    datmax = 1.000001
                     do ii = 1,this%nAtoms
                         if (present(mask)) then
                             if (.not. mask(ii)) cycle
@@ -1406,7 +1408,7 @@
             
             character(len=256)                              ::      dummy                         
             integer,dimension(0:this%nColumns)              ::      nn 
-            real(kind=real64),dimension(1:this%nColumns)    ::      datmax 
+            real(kind=real32),dimension(1:this%nColumns)    ::      datmax 
              
             if (.not. ovito) then
                 call output0(this)
@@ -1417,7 +1419,7 @@
             do ii = 1,this%nAtomNames
                 nn(0) = max(nn(0),len_trim(this%atomName(ii)))
             end do
-            datmax = 1.000001d0
+            datmax = 1.000001
             do ii = 1,this%nAtoms
                 do jj = 1,this%nColumns
                     datmax(jj) = max(datmax(jj),abs(this%dat(jj,ii)))
@@ -1503,7 +1505,7 @@
     !*      generate a single output line eg
     !*      "atom" 123.456 123.456 123.456 654.321 1.00 1.00 1.00
             character(len=*),intent(in)                     ::      t
-            real(kind=real64),dimension(:),intent(in)       ::      dat
+            real(kind=real32),dimension(:),intent(in)       ::      dat
             integer,dimension(0:),intent(in)                ::      n
             integer,dimension(0:),intent(in),optional       ::      dt
             character(len=256)                              ::      line
@@ -1516,7 +1518,7 @@
                 kk = n(0) 
                 do ii = 1,size(dat)
                     if (dt(ii) == LIBXYZ_COL_FLOAT) then
-                        call ftoa(dat(ii),n(ii),6,line(kk+1:),mm) 
+                        call ftoa(real(dat(ii),kind=real64),n(ii),6,line(kk+1:),mm) 
                         kk = kk + mm
                     else if (dt(ii) == LIBXYZ_COL_UINT) then
                         call utoa(nint(abs(dat(ii))),n(ii),line(kk+2:),mm) 
@@ -1530,7 +1532,7 @@
             else                    
                 kk = n(0) 
                 do ii = 1,size(dat)
-                    call ftoa(dat(ii),n(ii),6,line(kk+1:),mm) 
+                    call ftoa(real(dat(ii),kind=real64),n(ii),6,line(kk+1:),mm) 
                     kk = kk + mm
                 end do
             end if                    
@@ -1832,7 +1834,7 @@
             type(XYZFile),intent(inout)       ::      this
             integer,intent(in)                ::      nColumns
             integer,intent(in),optional       ::      nAtoms
-            real(kind=real64),dimension(:,:),pointer        ::      dat_tmp
+            real(kind=real32),dimension(:,:),pointer        ::      dat_tmp
             integer,dimension(:),pointer                    ::      atom_tmp,dt_tmp
             
             
@@ -2067,7 +2069,7 @@
             type(XYZFile),intent(inout)     ::      this
             integer,intent(in)              ::      nAtoms
             integer,dimension(:),pointer                    ::      atom_tmp
-            real(kind=real64),dimension(:,:),pointer        ::      dat_tmp
+            real(kind=real32),dimension(:,:),pointer        ::      dat_tmp
             if (associated(this%dat)) then
                 if (nAtoms>size(this%dat,dim=2)) then
                     if (this%nAtoms>0) then
@@ -2160,7 +2162,7 @@
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      can be used to set first 3 cols ( position )
             type(XYZFile),intent(inout)      ::      this
-            real(kind=real64),dimension(:,:),intent(in)  ::      c
+            real(kind=real32),dimension(:,:),intent(in)  ::      c
             integer     ::  nc,na
             nc = min(this%nColumns,size(c,dim=1))
             na = min(this%nAtoms,size(c,dim=2))
@@ -2174,7 +2176,7 @@
     !*      can be used to set first 3 cols ( position )
             type(XYZFile),intent(inout)                 ::      this
             integer,intent(in)                          ::      i
-            real(kind=real64),dimension(:),intent(in)   ::      c
+            real(kind=real32),dimension(:),intent(in)   ::      c
             integer     ::  nc
             if (real(i)*(this%nAtoms+1-i)<=0) return
             nc = min(this%nColumns,size(c,dim=1))
@@ -2187,17 +2189,33 @@
     !*      can be used to set jth col
             type(XYZFile),intent(inout)                 ::      this
             integer,intent(in)                          ::      i,j
-            real(kind=real64),intent(in)   ::      c
+            real(kind=real32),intent(in)   ::      c
      
             this%dat(j,i) = c
             return
         end subroutine setColumns2
 
+
+        pure subroutine setColumns3(this,i,c)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      can be used to set first 3 cols ( position )
+            type(XYZFile),intent(inout)                 ::      this
+            integer,intent(in)                          ::      i
+            real(kind=real64),dimension(:),intent(in)   ::      c
+            integer     ::  nc
+            if (real(i)*(this%nAtoms+1-i)<=0) return
+            nc = min(this%nColumns,size(c,dim=1))
+            this%dat(1:nc,i) = real( c(1:nc),kind=real32 )
+            return
+        end subroutine setColumns3
+        
+
+
         pure subroutine getColumns0(this,c)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      can be used to get first 3 cols ( position )
             type(XYZFile),intent(in)                        ::      this
-            real(kind=real64),dimension(:,:),intent(out)    ::      c
+            real(kind=real32),dimension(:,:),intent(out)    ::      c
             integer     ::  nc,na
             nc = min(this%nColumns,size(c,dim=1))
             na = min(this%nAtoms,size(c,dim=2))
@@ -2210,7 +2228,7 @@
     !*      can be used to get first 3 cols ( position )
             type(XYZFile),intent(inout)                 ::      this
             integer,intent(in)                          ::      i
-            real(kind=real64),dimension(:),intent(out)  ::      c
+            real(kind=real32),dimension(:),intent(out)  ::      c
             integer     ::  nc
             if (real(i)*(this%nAtoms+1-i)<=0) return
             nc = min(this%nColumns,size(c,dim=1))
@@ -2222,7 +2240,7 @@
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      pointer to columns
             type(XYZFile),intent(inout)                 ::      this
-            real(kind=real64),dimension(:,:),pointer    ::      cp
+            real(kind=real32),dimension(:,:),pointer    ::      cp
             cp => this%dat
             return
         end subroutine getColumnsp
@@ -2458,7 +2476,7 @@
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      displace all atoms by fixed vector dx
             type(XYZFile),intent(inout)                     ::      this
-            real(kind=real64),dimension(3),intent(in)       ::      dx
+            real(kind=real32),dimension(3),intent(in)       ::      dx
             integer     ::      ii
             do ii = 1,this%nAtoms
                 this%dat(1:3,ii) = this%dat(1:3,ii) + dx(1:3)
@@ -2472,7 +2490,7 @@
     !*      this%dat(1:this%nColumns,ii) = old_dat(1:this%nColumns,indx(ii))
             type(XYZFile),intent(inout)                     ::      this
             integer,dimension(:),intent(in)                 ::      indx
-            real(kind=real64),dimension(this%nColumns,this%nAtoms)  ::      old_dat
+            real(kind=real32),dimension(this%nColumns,this%nAtoms)  ::      old_dat
             integer,dimension(this%nAtoms)  ::      old_atom
             integer             ::      ii
             old_dat(1:this%nColumns,1:this%nAtoms) = this%dat(1:this%nColumns,1:this%nAtoms)
@@ -2544,7 +2562,7 @@
             real(kind=real64),intent(in)        ::      a0      !   indicative unit cell side
             real(kind=real64),intent(in),optional   ::  offset
             logical,intent(in),optional         ::      verbose
-            real(kind=real64),dimension(3)      ::      minx,maxx,xx,xoffbar
+            real(kind=real32),dimension(3)      ::      minx,maxx,xx,xoffbar
             integer                             ::      ii
             integer                             ::      nsx,nsy,nsz
             logical                             ::      op
@@ -2583,9 +2601,9 @@
             xoffbar(3) = xoffbar(3) / max(nsz,1)
             xx(1:3) = - minx(1:3) - xoffbar(1:3)
             if (present(offset)) then
-                xx(1:3) = xx(1:3) + a0*offset
+                xx(1:3) = xx(1:3) + real(a0*offset,kind=real32)
             else
-                xx(1:3) = xx(1:3) + a0/8
+                xx(1:3) = xx(1:3) + real(a0/8,kind=real32)
             end if
         !   now have offset required to line up atoms on 0,0,0 boundary
 
@@ -2626,7 +2644,7 @@
             real(kind=real64),dimension(3),intent(in)        ::      a0      !   indicative unit cell sides
             real(kind=real64),intent(in),optional   ::  offset
             logical,intent(in),optional         ::      verbose
-            real(kind=real64),dimension(3)      ::      minx,maxx,xx,xoffbar
+            real(kind=real32),dimension(3)      ::      minx,maxx,xx,xoffbar
             integer                             ::      ii
             integer                             ::      nsx,nsy,nsz
             logical                             ::      op
@@ -2665,9 +2683,9 @@
             xoffbar(3) = xoffbar(3) / max(nsz,1)
             xx(1:3) = - minx(1:3) - xoffbar(1:3)
             if (present(offset)) then
-                xx(1:3) = xx(1:3) + a0(1:3)*offset
+                xx(1:3) = xx(1:3) + real(a0(1:3)*offset,kind=real32)
             else
-                xx(1:3) = xx(1:3) + a0(1:3)/8
+                xx(1:3) = xx(1:3) + real(a0(1:3)/8,kind=real32)
             end if
         !   now have offset required to line up atoms on 0,0,0 boundary
 

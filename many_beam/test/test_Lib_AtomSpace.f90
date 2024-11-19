@@ -135,7 +135,7 @@
             maxx = -huge(1.0)
             avgx = 0
             do ii = 1,NATOMS
-                xt(:) = toImagingSpace(as,x(:,ii))
+                xt(:) = toImagingSpace( as, x(:,ii) )
                 minx = min( xt(:),minx )
                 maxx = max( xt(:),maxx )
                 avgx = avgx + xt(:)
@@ -149,7 +149,7 @@
             
             nn = 0
             do ii = 1,NATOMS
-                call periodicCopies(as,x(:,ii),Nx,Ny,0,np,xtp)
+                call periodicCopies(as,real(x(:,ii),kind=real32),Nx,Ny,0,np,xtp)
                 do jj = 1,np
                     nn = nn + 1
                     minx = min( xtp(:,jj),minx )

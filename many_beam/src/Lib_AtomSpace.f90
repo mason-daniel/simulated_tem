@@ -41,6 +41,7 @@
         public      ::      delete
          
         public      ::      toImagingSpace
+        public      ::      fromImagingSpace
         public      ::      suggestImagingSpace
         public      ::      periodicCopies
 
@@ -49,7 +50,7 @@
         public      ::      geta_super
         public      ::      getR
         public      ::      getL
-        public      ::      getn            !   returns the normal to the plane after cell rotation by R
+        !public      ::      getn            !   returns the normal to the plane after cell rotation by R
  
         public      ::      setR            !   sets the rotation matrix R , and the normal to the foil n. Does not set the thickness.
         public      ::      setThickness    !   computes the bounds of the atom box in the imaging space
@@ -71,7 +72,7 @@
             real(kind=real64),dimension(3,3)    ::      a_super             !   periodic supercell defined in input xyz file, ie before rotation by R. Columns are the three supercell repeat vectors in the .xyz file
             real(kind=real64),dimension(3,3)    ::      R                   !   rotation matrix
             real(kind=real64),dimension(3)      ::      n0                  !   normal vector defining plane of foil, before rotation by R
-            real(kind=real64),dimension(3)      ::      n                   !   normal vector defining plane of foil, including rotation. n = R n0 
+            !real(kind=real64),dimension(3)      ::      n                   !   normal vector defining plane of foil, including rotation. n = R n0 
             real(kind=real64)                   ::      L                   !   thickness of foil. If we are working with planes, (d2-d1) = L cos(theta). But we can also set this for an explicit surface using atom positions.
         end type 
 
@@ -109,9 +110,9 @@
             module procedure        getdelta0
         end interface
 
-        interface   getn
-            module procedure        getn0
-        end interface
+        ! interface   getn
+        !     module procedure        getn0
+        ! end interface
 
         interface   geta_super
             module procedure        geta_super0
@@ -138,6 +139,10 @@
             module procedure        seta_super0
         end interface
  
+        interface   fromImagingSpace
+            module procedure        fromImagingSpace0
+            module procedure        fromImagingSpace1
+        end interface
 
     contains
 !---^^^^^^^^
@@ -159,7 +164,8 @@
             this%xyzoffset = 0.0d0
             this%delta = 0.0d0
             call seta_super(  this,reshape( (/1.0d0,0.0d0,0.0d0,0.0d0,1.0d0,0.0d0,0.0d0,0.0d0,1.0d0/),(/3,3/) ) )
-            call setR( this,reshape( (/1.0d0,0.0d0,0.0d0,0.0d0,1.0d0,0.0d0,0.0d0,0.0d0,1.0d0/),(/3,3/) ) )
+            this%R = reshape( (/1.0d0,0.0d0,0.0d0,0.0d0,1.0d0,0.0d0,0.0d0,0.0d0,1.0d0/),(/3,3/) )
+            call setR( this,this%R  )
             return
         end function AtomSpace_null
         
@@ -174,7 +180,8 @@
             this%ia = 1/a
             this%xyzoffset = xyzoffset
             call seta_super( this,a_super )
-            call setR( this,reshape( (/1.0d0,0.0d0,0.0d0,0.0d0,1.0d0,0.0d0,0.0d0,0.0d0,1.0d0/),(/3,3/) ) )
+            this%R = reshape( (/1.0d0,0.0d0,0.0d0,0.0d0,1.0d0,0.0d0,0.0d0,0.0d0,1.0d0/),(/3,3/) )
+            call setR( this,this%R )
             
             return
         end function AtomSpace_ctor0
@@ -217,7 +224,7 @@
             integer     ::      uu,oo
             uu = 6 ; if (present(u)) uu = u
             oo = 0 ; if (present(o)) oo = o
-            write(unit=uu,fmt='(a,f16.8,a,3f12.8,a)')         repeat(" ",oo)//"AtomSpace [L=",this%L,", n = ",this%n,"]"
+            write(unit=uu,fmt='(a,f16.8,a,3f12.8,a)')         repeat(" ",oo)//"AtomSpace [L=",this%L,", n = ",this%n0,"]"
             write(unit=uu,fmt='(a,a48,a4,a16)')      repeat(" ",oo+4),"Rotation Matrix R"," ","disp delta"
             write(unit=uu,fmt='(a,3f16.8,a4,f16.8)') repeat(" ",oo+4),this%R(1,:)," ",this%delta(1)
             write(unit=uu,fmt='(a,3f16.8,a4,f16.8)') repeat(" ",oo+4),this%R(2,:)," ",this%delta(2)
@@ -235,9 +242,10 @@
 !
 !******************************************************************************
 
+
         pure function toImagingSpace(this,r) result(rt)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      rt = R ( r - offset )/a
+    !*      rt = R ( r - delta )/a
             type(AtomSpace),intent(in)                  ::      this
             real(kind=real64),dimension(3),intent(in)   ::  r
             real(kind=real64),dimension(3)              ::  rt
@@ -247,22 +255,50 @@
             return
         end function toImagingSpace
 
+
+        pure function fromImagingSpace0(this,rt) result(r)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      rt = R ( r - delta )/a
+            type(AtomSpace),intent(in)                  ::      this
+            real(kind=real32),dimension(3),intent(in)   ::      rt
+            real(kind=real64),dimension(3)              ::      r
+            real(kind=real64),dimension(3)      ::      xx
+            xx(1:3) = rt(1:3) / this%ia
+            xx(1:3) = this%R(1,1:3)*xx(1) + this%R(2,1:3)*xx(2) + this%R(3,1:3)*xx(3) 
+            r = real( xx + this%delta(1:3),kind=real32 )
+            return
+        end function fromImagingSpace0
+
                  
+        pure function fromImagingSpace1(this,rt) result(r)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      rt = R ( r - delta )/a
+            type(AtomSpace),intent(in)                  ::      this
+            integer,dimension(3),intent(in)             ::      rt
+            real(kind=real32),dimension(3)              ::      r
+            real(kind=real64),dimension(3)      ::      xx
+            xx(1:3) = rt(1:3) / this%ia
+            xx(1:3) = this%R(1,1:3)*xx(1) + this%R(2,1:3)*xx(2) + this%R(3,1:3)*xx(3) 
+            r = real( xx + this%delta(1:3),kind=real32 )
+            return
+        end function fromImagingSpace1
+
         subroutine suggestImagingSpace(this,Nx,Ny,Nz,theta)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      suggest a size for the imaging space which covers all the atoms
+    !*      suggest a size for the imaging space which covers all the atoms + one extra cell in the x-y directions
     !*      optionally add a divergence angle 
+
             type(AtomSpace),intent(in)                  ::      this
             integer,intent(out)                         ::      Nx,Ny,Nz
             real(kind=real64),intent(in),optional       ::      theta
              
-            real(kind=real64),dimension(3,8)           ::      cornert
 
-            integer             ::      ii,ix,iy,iz , dNxy
-            real(kind=real64)   ::      minx,maxx,in3 , d1,d2 , tantheta
+            real(kind=real64),dimension(3,8)    ::      cornert
+            integer                             ::      ii,ix,iy,iz , dNxy
+            real(kind=real64)                   ::      minx,maxx,in3 , d1,d2 , tantheta
             real(kind=real64),parameter         ::      TOL = 1.0d-6
- 
-            integer             ::      angle_loop
+            real(kind=real64),dimension(3)      ::      Rn 
+            integer                             ::      angle_loop
  
 
         !---    find box corners without periodic replicas, and without divergence angle
@@ -293,35 +329,47 @@
             minx = huge(1.0) ; maxx = -huge(1.0d0)
             d1 = -TOL
             d2 = ( this%n0(1)*this%a_super(1,3) + this%n0(2)*this%a_super(2,3) + this%n0(3)*this%a_super(3,3) ) * this%ia + TOL
-            in3 = 1/this%n(3)
+            Rn(1:3) = this%R(1:3,1)*this%n0(1) + this%R(1:3,2)*this%n0(2) + this%R(1:3,3)*this%n0(3) 
+            !in3 = 1/this%n(3)
+            in3 = 1/Rn(3)
             tantheta = 0 ; if (present(theta)) tantheta = tan(theta)
             dNxy  = 0
             
 
             do angle_loop = 1,10
 
-                ix = -dNxy   ; iy = -dNxy   ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ix = Nx+dNxy ; iy = -dNxy   ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ix = -dNxy   ; iy = Ny+dNxy ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ix = Nx+dNxy ; iy = Ny+dNxy ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
+                ix = -dNxy   ; iy = -dNxy   ; minx = min( minx, (d1 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - Rn(1)*ix - Rn(2)*iy )*in3 )
+                ix = Nx+dNxy ; iy = -dNxy   ; minx = min( minx, (d1 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - Rn(1)*ix - Rn(2)*iy )*in3 )
+                ix = -dNxy   ; iy = Ny+dNxy ; minx = min( minx, (d1 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - Rn(1)*ix - Rn(2)*iy )*in3 )
+                ix = Nx+dNxy ; iy = Ny+dNxy ; minx = min( minx, (d1 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - Rn(1)*ix - Rn(2)*iy )*in3 )
 
-                ix = -dNxy   ; iy = -dNxy   ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ix = Nx+dNxy ; iy = -dNxy   ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ix = -dNxy   ; iy = Ny+dNxy ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ix = Nx+dNxy ; iy = Ny+dNxy ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
+                ix = -dNxy   ; iy = -dNxy   ; minx = min( minx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 )
+                ix = Nx+dNxy ; iy = -dNxy   ; minx = min( minx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 )
+                ix = -dNxy   ; iy = Ny+dNxy ; minx = min( minx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 )
+                ix = Nx+dNxy ; iy = Ny+dNxy ; minx = min( minx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 )
+
+                ! ix = -dNxy   ; iy = -dNxy   ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
+                ! ix = Nx+dNxy ; iy = -dNxy   ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
+                ! ix = -dNxy   ; iy = Ny+dNxy ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
+                ! ix = Nx+dNxy ; iy = Ny+dNxy ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
+
+                ! ix = -dNxy   ; iy = -dNxy   ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
+                ! ix = Nx+dNxy ; iy = -dNxy   ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
+                ! ix = -dNxy   ; iy = Ny+dNxy ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
+                ! ix = Nx+dNxy ; iy = Ny+dNxy ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
 
                 Nz = ceiling( maxx - minx )  
                 ii = ceiling( Nz * tantheta )
                 if (ii>dNxy) then                    
                     dNxy = ii
-                    if (rank==0) print *,"Lib_AtomSpace::suggestImagingSpace info - padding for dispersion angle to ",Nx+2*dNxy,",",Ny+2*dNxy
+                    if ((rank==0).and. present(theta)) write (*,fmt='(a,f10.4,6(a,i4))') " Lib_AtomSpace::suggestImagingSpace info - dispersion angle ",theta," (rad). Pad image space from ",Nx,",",Ny,",",Nz," to ",Nx+2*dNxy,",",Ny+2*dNxy,",",Nz
                 else
                     exit
                 end if
                     
             end do
-            Nx = Nx + 2*dNxy
-            Ny = Ny + 2*dNxy
+            Nx = Nx + 2*dNxy + 2        !   +2*dNxy is the divergence angle, +2 is a buffer of +1 cell for parallelization optimisation
+            Ny = Ny + 2*dNxy + 2
 
             return
         end subroutine suggestImagingSpace
@@ -334,7 +382,7 @@
     !*      return the number of periodic copies np and position of periodic copies xtp(1:3,1:np) needed
     !*      note that it may be necessary to place atoms one or two cells outside this region too.
             type(AtomSpace),intent(in)                  ::      this
-            real(kind=real64),dimension(3),intent(in)   ::      x
+            real(kind=real32),dimension(3),intent(in)   ::      x
             integer,intent(in)                          ::      Nx,Ny
             integer,intent(in)                          ::      nBuf                !   may need some points outside imaging space for buffer region
             integer,intent(out)                         ::      np
@@ -367,33 +415,14 @@
     !*      note that it may be necessary to place atoms one or two cells outside this region too.
             type(AtomSpace),intent(in)                  ::      this
             type(ImagingSpace),intent(in)               ::      img
-            real(kind=real64),dimension(3),intent(in)   ::      x
+            real(kind=real32),dimension(3),intent(in)   ::      x
             integer,intent(out)                         ::      np
             real(kind=real64),dimension(:,:),intent(inout)  ::      xtp             !   (3,9)
             call periodicCopies0(this,x,getNx(img),getNy(img),getnBuf(img),np,xtp)
             return
         end subroutine periodicCopies1
 
-
-    !     pure real(kind=real64) function scaledDensity(rho,rho0)
-    ! !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ! !*      given the density per imaging space rho, and the expected average density rho0,
-    ! !*      compute a scaled density in the range 0:1, where 
-    !         real(kind=real64),intent(in)                ::      rho
-    !         real(kind=real64),intent(in)                ::      rho0
-
-    !         real(kind=real64)               ::      xx
-    !         if (rho < 0) then       !   not sure how this can possibly happen!?
-    !             scaledDensity = 0.0d0
-    !         else if (rho > rho0) then
-    !             scaledDensity = 1.0d0
-    !         else 
-    !             xx = rho/rho0
-    !             scaledDensity = xx*xx*xx*(10 + xx*(-15+6*xx))
-    !         end if
-
-    !         return
-    !     end function scaledDensity
+ 
 
 !******************************************************************************
 !
@@ -435,13 +464,13 @@
             return
         end function getdelta0
         
-        pure function getn0(this) result (n)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
-            type(AtomSpace),intent(in)              ::      this
-            real(kind=real64),dimension(3)          ::      n
-            n = this%n
-            return
-        end function getn0
+    !     pure function getn0(this) result (n)
+    ! !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+    !         type(AtomSpace),intent(in)              ::      this
+    !         real(kind=real64),dimension(3)          ::      n
+    !         n = this%n
+    !         return
+    !     end function getn0
 
         pure function geta_super0(this) result (a_super)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -491,7 +520,7 @@
             this%R = R
             
         !---    normal after rotation
-            this%n(1:3) = this%R(1:3,1)*this%n0(1) + this%R(1:3,2)*this%n0(2) + this%R(1:3,3)*this%n0(3) 
+        !    this%n(1:3) = this%R(1:3,1)*this%n0(1) + this%R(1:3,2)*this%n0(2) + this%R(1:3,3)*this%n0(3) 
 
             dR = matmul( R,transpose(this%R) )
             L_after = getThickness(this,dR)
@@ -502,7 +531,7 @@
 
         pure subroutine setDelta0(this,Nx,Ny,Nz)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      given the imaging space size, compute displacmeent required so atom in middle of box is in middle of imaging space
+    !*      given the imaging space size, compute displacement required so atom in middle of box is in middle of imaging space
     !*      The atoms are input at positions r = xyzoffset + a_super [xyz], with [xyz] in range 0:1
     !*      they are scaled and transformed to 
     !*          rt = R ( r - delta )/a
@@ -523,14 +552,13 @@
         pure real(kind=real64) function getThickness0(this)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             type(AtomSpace),intent(in)                              ::      this
-            real(kind=real64),dimension(3)              ::      nn      !   new normal
-            real(kind=real64)                           ::      a3dotn0 
+            real(kind=real64)                   ::      Rnz      !   new normal z-direction
+            real(kind=real64)                   ::      a3dotn0 
             
-            nn(1:3) = this%R(1:3,1)*this%n0(1) + this%R(1:3,2)*this%n0(2) + this%R(1:3,3)*this%n0(3) 
+            Rnz = this%R(3,1)*this%n0(1) + this%R(3,2)*this%n0(2) + this%R(3,3)*this%n0(3) 
 
             a3dotn0 = dot_product( this%a_super(1:3,3) , this%n0 )  
-            getThickness0 = a3dotn0/nn(3)
-            !getThickness0 = this%L
+            getThickness0 = a3dotn0/Rnz
             return
         end function getThickness0
 
@@ -543,16 +571,16 @@
             real(kind=real64),dimension(3,3),intent(in)             ::      R
 
             real(kind=real64),dimension(3,3)            ::      RR      !   new rotation
-            real(kind=real64),dimension(3)              ::      nn      !   new normal
+            real(kind=real64)                   ::      Rnz      !   new normal z-direction
             real(kind=real64)                           ::      a3dotn0 
             real(kind=real64)                   ::          L_before,L_after
 
             L_before = getThickness(this)
             RR = matmul(R,this%R)
-            nn(1:3) = RR(1:3,1)*this%n0(1) + RR(1:3,2)*this%n0(2) + RR(1:3,3)*this%n0(3) 
+            Rnz = RR(3,1)*this%n0(1) + RR(3,2)*this%n0(2) + RR(3,3)*this%n0(3) 
 
             a3dotn0 = dot_product( this%a_super(1:3,3) , this%n0 )  
-            L_after = a3dotn0/nn(3)
+            L_after = a3dotn0/Rnz
             
             getThickness1 = this%L * L_after / L_before
             return
@@ -577,7 +605,7 @@
             integer             ::      nAtoms
             integer             ::      ii,iz
             real(kind=real64)   ::      rho,vol,d1,d2
-            real(kind=real64),dimension(3)      ::      nn          
+            real(kind=real64),dimension(3)      ::      Rn,nn          
 
         !   If we have just the corners of the box, rj = f + x a1 + y a2 + z a3
         !   with f the file offset, and (x,y,z) in [0,1)
@@ -594,7 +622,9 @@
             end if
         
         !   thickness of the foil in the imaging direction is trivial, (d2-d1) = L cos(theta) = L n.z
-            this%L = a3dotn0/this%n(3)
+            Rn(1:3) = this%R(1:3,1)*this%n0(1) + this%R(1:3,2)*this%n0(2) + this%R(1:3,3)*this%n0(3) 
+            this%L = a3dotn0/Rn(3)
+            ! this%L = a3dotn0/this%n(3)
 
 
 
@@ -636,8 +666,8 @@
                 end do                
                         
             !   thickness of the foil in the imaging direction is trivial, (d2-d1) = L cos(theta) = L n.z
-                this%L = (d2-d1)/this%n(3)
- 
+                !this%L = (d2-d1)/this%n(3)
+                this%L = (d2-d1)/Rn(3)
 
             end if
 

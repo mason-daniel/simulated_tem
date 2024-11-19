@@ -27,52 +27,58 @@
         implicit none
         private
 
-        real(kind=real64),parameter                 ::      PI = 3.14159265390d0
+        real(kind=real64),parameter     ::      PI = 3.14159265390d0
 
         integer,private                 ::      rank = 0, nProcs = 1
-
-        logical,public          ::      Lib_ComputePhaseFactor_DBG = .false.      
+        logical,public                  ::      Lib_ComputePhaseFactor_DBG = .false.      
  
         public                  ::      Lib_ComputePhaseFactor_init_MPI
 
         public                  ::      computePhaseFactor
         public                  ::      densityScale
 
+        
 
         interface   computePhaseFactor
-            module procedure    computePhaseFactor0
+            ! module procedure    computePhaseFactor0
             module procedure    computePhaseFactor1
         end interface
 
         interface   twentySevenPointStencil
-            module procedure    real_twentySevenPointStencil
+            !module procedure    real_twentySevenPointStencil
             module procedure    complex_twentySevenPointStencil
         end interface
 
+        interface   densityScale
+            module procedure    densityScale32
+            module procedure    densityScale64
+        end interface
+
+        
         
     contains
 !---^^^^^^^^
 
-        subroutine computePhaseFactor0( mynAtoms, rt,g, img, x,grad_x,rho )
+    !     subroutine computePhaseFactor0( mynAtoms, rt,g, img, x,grad_x,rho )
+    ! !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^            
+    !         integer,intent(in)                                          ::      mynAtoms
+    !         real(kind=real64),dimension(1:,1:),intent(in)               ::      rt      !   (1:3,1:myNatoms) atom positions, scaled to rt = R (r-delta)/a. Typically in range  lbound(x):ubound(x)
+    !         real(kind=real64),dimension(1:,1:),intent(in)               ::      g       !   (1:3,1:nGvec), reciprocal lattice vectors, with lengths in 1/A
+    !         type(ImagingSpace),intent(in)                               ::      img 
             
-            integer,intent(in)                                          ::      mynAtoms
-            real(kind=real64),dimension(1:,1:),intent(in)               ::      rt      !   (1:3,1:myNatoms) atom positions, scaled to rt = R (r-delta)/a. Typically in range  lbound(x):ubound(x)
-            real(kind=real64),dimension(1:,1:),intent(in)               ::      g       !   (1:3,1:nGvec), reciprocal lattice vectors, with lengths in 1/A
-            type(ImagingSpace),intent(in)                               ::      img 
-            
-            complex(kind=real64),dimension(:,:,:,:),pointer,intent(out)         ::      x           !   (1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
-            complex(kind=real64),dimension(:,:,:,:,:),pointer,intent(out)       ::      grad_x      !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
-            real(kind=real64),dimension(:,:,:),pointer,intent(inout)            ::      rho         !   (lbx:ubx,lby:uby,lbz:ubz)
+    !         complex(kind=real64),dimension(:,:,:,:),pointer,intent(out)         ::      x           !   (1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
+    !         complex(kind=real64),dimension(:,:,:,:,:),pointer,intent(out)       ::      grad_x      !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
+    !         real(kind=real64),dimension(:,:,:),pointer,intent(inout)            ::      rho         !   (lbx:ubx,lby:uby,lbz:ubz)
 
-            x = 1.0d0
-            grad_x = 0.0d0
-            rho = 1.0d0
-            return
-        end subroutine computePhaseFactor0
+    !         x = 1.0d0
+    !         grad_x = 0.0d0
+    !         rho = 1.0d0
+    !         return
+    !     end subroutine computePhaseFactor0
 
 
-        subroutine computePhaseFactor1( mynAtoms, rt,g, img, delta, grad_arg_x,rho,x )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        subroutine computePhaseFactor1( mynAtoms, rt,g, img, delta,lbz,ubz, grad_arg_x,rho )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      compute a smoothed approximation x ~ exp( - i g.u )  
     !*      and at the same time a density estimation rho(r) and grad x
     !*      I compute a correctly weighted but unnormalised x~ for each atom j
@@ -94,31 +100,32 @@
     !*      So compute the complex field x, but return the _real_ field ∇ arg(x) = Im( x* ∇ x )
 
             integer,intent(in)                                          ::      mynAtoms
-            real(kind=real64),dimension(1:,1:),intent(in)               ::      rt      !   (1:3,1:myNatoms) atom positions, scaled to rt = R (r-delta)/a. Typically in range  lbound(x):ubound(x)
-            real(kind=real64),dimension(1:,1:),intent(in)               ::      g       !   (1:3,1:nGvec), reciprocal lattice vectors, with lengths in 1/A
+            real(kind=real32),dimension(:,:),intent(in)                 ::      rt      !   (1:3,1:myNatoms) atom positions, scaled to rt = R (r-delta)/a. Typically in range  lbound(x):ubound(x)
+            real(kind=real64),dimension(:,:),intent(in)                 ::      g       !   (1:3,1:nGvec), reciprocal lattice vectors, with lengths in 1/A
             type(ImagingSpace),intent(in)                               ::      img 
             real(kind=real64),dimension(3),intent(in)                   ::      delta   !   after rotation, it is necessary to apply an offst to atom positions so that central atom ends up in centre of box.
-            
-            real(kind=real64),dimension(:,:,:,:,:),pointer,intent(inout)        ::      grad_arg_x   !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
-            real(kind=real64),dimension(:,:,:),pointer,intent(inout)            ::      rho     !   (lbx:ubx,lby:uby,lbz:ubz)
-            complex(kind=real64),dimension(:,:,:,:),pointer,intent(inout),optional   ::      x
-
-
-            complex(kind=real64),dimension(:,:,:,:),pointer     ::      xx       !   (1:nGvec,lbx:ubx,lby:uby,lbz:ubz)            
+            integer,intent(in)                                          ::      lbz,ubz              !   slice of the region covered by the nodes  
+            real(kind=real32),dimension(:,:,:,:,:),pointer,intent(inout)        ::      grad_arg_x   !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
+            real(kind=real32),dimension(:,:,:),pointer,intent(inout)            ::      rho     !   (lbx:ubx,lby:uby,lbz:ubz)
+           
+            complex(kind=real32),dimension(:,:,:,:),pointer     ::      xx              !   (1:nGvec,lbx:ubx,lby:uby,lbz:ubz)            
             real(kind=real64),dimension(size(g,dim=2))          ::      gdotoff
             integer                                             ::      nGvec                  
             integer                                             ::      nn              !   number of points to search in kernel
             real(kind=real64),dimension(:,:),allocatable        ::      dist_kernel     !   (0:3,1:nn)
-            complex(kind=real64),dimension(:,:),allocatable     ::      x_weight        !   (1:nGvec,1:nn)          weight to add to each nearby node.  
-            real(kind=real64),dimension(:),allocatable          ::      rho_weight      !   (1:nn)                  weight to add to each nearby node.  
+            complex(kind=real32),dimension(:,:),allocatable     ::      x_weight        !   (1:nGvec,1:nn)          weight to add to each nearby node.  
+            real(kind=real32),dimension(:),allocatable          ::      rho_weight      !   (1:nn)                  weight to add to each nearby node.  
             integer,dimension(:,:),allocatable                  ::      dx_kernel       !   (1:3,1:nn)      vector to neighbour nodes      
-            real(kind=real64)                                   ::      aa,dd,a2on2s2,rmy1,rmy2,rmy3 ,d0 , weightsum , gdotr  
+            real(kind=real64)                                   ::      aa,dd,a2on2s2,rmy1,rmy2,rmy3 , gdotr  
             complex(kind=real64),dimension(size(g,dim=2))       ::      eigdotr
-            complex(kind=real64),dimension(3)                   ::      grad_x
-            complex(kind=real64),dimension(size(g,dim=2),-1:1,-1:1,-1:1)    ::      local_x
-            integer             ::      lbx,ubx,lby,uby,lbz,ubz         !   bounds of the region covered by the nodes x
+            complex(kind=real32),dimension(3)                   ::      grad_x
+            real(kind=real32)                                   ::      d32,d0,weightsum
+            complex(kind=real32)                                ::      conjgx
+            complex(kind=real32),dimension(size(g,dim=2),-1:1,-1:1,-1:1)    ::      local_x
+            integer             ::      lbx,ubx,lby,uby                 !   bounds of the region covered by the nodes x
             integer             ::      ix,iy,iz , jx,jy,jz             !   node numbers
             integer             ::      ii,jj,kk 
+            integer             ::      nInBufferedBounds,nBuf
  
 
         !---    find the size of the problem                 
@@ -127,33 +134,52 @@
         !---    find the bounds of the set of nodes I am adding to
             lbx = lbound(rho,dim=1) ; ubx = ubound(rho,dim=1)
             lby = lbound(rho,dim=2) ; uby = ubound(rho,dim=2)
-            lbz = lbound(rho,dim=3) ; ubz = ubound(rho,dim=3)
+            
 
-            allocate(xx(1:nGvec,lbx-1:ubx+1,lby-1:uby+1,lbz-1:ubz+1))
-            xx = 0.0d0
-            grad_arg_x = 0.0d0
-            rho = 0.0d0
-                !print *,"ComputePhaseFactor "   !,lbx,ubx,lby,uby,lbz,ubz ",lbx,ubx,lby,uby,lbz,ubz," nGvec ",nGvec
-            if (rank==0) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - computing x(r) and rho(r)"
+            allocate(xx(1:nGvec,lbx-1:ubx+1,lby-1:uby+1,-1:ubz+1-lbz))
+            xx = 0.0
+            grad_arg_x = 0.0 
+            rho = 0.0 
+
+
+
+            if (rank==0) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - computing grad_arg_x(r) and rho(r) for z=",lbz,":",ubz," alloc ",lbound(rho,dim=3),":",ubound(rho,dim=3)
+            
+
 
         !---    find the Gaussian kernel
             aa = geta(img)
-            dd = aa/getsigma(img)
+            dd = getsigma(img)
+            nbuf = buffer(aa,dd)
+            dd = aa/dd
             a2on2s2 = dd*dd/2
             call computeKernels( geta(img),getsigma(img), nn, dx_kernel,dist_kernel )
             allocate(x_weight(nGvec,nn))                            !   to collect exp[ -i g.r - |r|^2/(2sig^2) ] on each node            
             allocate(rho_weight(nn))                                !   to collect exp[ - |r|^2/(2sig^2) ] on each node
+            
 
         !---    compute g.offset, a constant phase factor for all atoms in the supercell. 
-        !       strictly speaking shouldn't change much, unless something weird is done to break up the input files.
+        !       strictly speaking this shouldn't change much, unless something weird is done to break up the input files.
             do jj = 1,nGvec
                 gdotoff(jj) = aa*dot_product( g(:,jj),delta )
+                if ((rank==0) .and. (Lib_ComputePhaseFactor_DBG)) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - g(",jj,") = ",g(:,jj)
             end do
 
-
+            nInBufferedBounds = 0
             do ii = 1,myNatoms
 
                 if (rank==0) call progressBar( ii,mynAtoms )
+
+                
+            !---    find nearest node to atom i , remembering that nodes are at (1/2,1/2,1/2) positions
+                ix = floor( rt(1,ii) ) 
+                iy = floor( rt(2,ii) ) 
+                iz = floor( rt(3,ii) ) 
+                if ( inBufferedBounds(ix,iy,iz) ) then
+                    nInBufferedBounds = nInBufferedBounds + 1
+                else
+                    cycle
+                end if
 
             !---    compute exp( - i g.r ) for this atom
                 do jj = 1,nGvec
@@ -162,13 +188,14 @@
                     eigdotr(jj) = complex( cos(gdotr),-sin(gdotr) )                    
                 end do
 
-            !---    find nearest node to atom i , remembering that nodes are at (1/2,1/2,1/2) positions
-                ix = floor( rt(1,ii) ) ; rmy1 = rt(1,ii) - (ix+0.5d0) 
-                iy = floor( rt(2,ii) ) ; rmy2 = rt(2,ii) - (iy+0.5d0)
-                iz = floor( rt(3,ii) ) ; rmy3 = rt(3,ii) - (iz+0.5d0)
+            !---    find difference vector, remembering that nodes are at (1/2,1/2,1/2) positions
+                rmy1 = rt(1,ii) - (ix+0.5d0) 
+                rmy2 = rt(2,ii) - (iy+0.5d0)
+                rmy3 = rt(3,ii) - (iz+0.5d0)
+
                 
-            !---    compute Gaussian weighting of exp( -i g.r ) on neighbour nodes
                 
+            !---    compute Gaussian weighting of exp( -i g.r ) on neighbour nodes                
             !       we want to compute
             !           d^2 = ( r - (y+dy) )^2 (a/s)^2 /2 
             !           = ((a/s)^2/2)  *  ( (r-y)^2 - 2 r.dy + (dy)^2 )
@@ -182,105 +209,132 @@
             !       ... which is 7.
             !       Yes. This is mission critical. So yes, 20% improvement is worth it.
 
- 
-                x_weight = 0.0d0
-                rho_weight = 0.0d0
-                
-                d0 = (rmy1*rmy1 + rmy2*rmy2 + rmy3*rmy3)*a2on2s2        
-                 
-                do kk = 1,nn
+
+            !---    spread contribution of the atom over the nn nearest neighbours
+                x_weight = 0.0
+                rho_weight = 0.0              
+                d0 = real( (rmy1*rmy1 + rmy2*rmy2 + rmy3*rmy3)*a2on2s2 , kind=real32 )
+                do kk = 1,nn                 
                     dd = d0 + dist_kernel(0,kk) + rmy1*dist_kernel(1,kk) + rmy2*dist_kernel(2,kk) + rmy3*dist_kernel(3,kk)   !   7 flops.
                     if (dd <= Lib_ImagingSpace_SIGMA_MULT*Lib_ImagingSpace_SIGMA_MULT) then
                         dd = exp( - dd )
-                        rho_weight(kk) = dd                                                             !   exp( -s (Rj-rk)² ) 
-                        do jj = 1,nGvec
-
-                            x_weight(jj,kk) = dd * eigdotr(jj)                                          !   exp( -i g.Rj ) exp( -s (Rj-rk)² ) 
- 
-                        end do
+                        rho_weight(kk) = real( dd, kind=real32 )                                                             !   exp( -s (Ri-rk)² ) 
+                        x_weight(:,kk) = cmplx( dd * eigdotr(:), kind=real32 )                                               !   exp( -i g.Ri ) exp( -s (Ri-rk)² )  
                     end if
                 end do
 
-            !---    normalise weighting so each atom actually has unit weight spread across each node, regardless of position wrt nodes.             
-                weightsum = sum(rho_weight)   
-                d0 = 1/max(1.0d-32,weightsum)                                                           !   sum_k exp( -s (Rj-rk)² ) 
+
+            !---    normalise weighting so each atom actually has unit weight spread across multiple nodes
+                weightsum = sum(rho_weight)                                                             !   sum_k exp( -s (Ri-rk)² ) 
+                d0 = 1/max(1.0e-32,weightsum)                                                           !   
                 do kk = 1,nn
                     jx = ix + dx_kernel(1,kk)
                     jy = iy + dx_kernel(2,kk)
-                    jz = iz + dx_kernel(3,kk)
+                    jz = iz + dx_kernel(3,kk)  
                     if (inBounds(jx,jy,jz)) then
-                        rho(jx,jy,jz) = rho(jx,jy,jz) + rho_weight(kk) * d0                              
-                        xx(1:nGvec,jx,jy,jz) = xx(1:nGvec,jx,jy,jz) + x_weight(1:nGvec,kk) * d0
+                        rho(jx,jy,jz-lbz) = rho(jx,jy,jz-lbz) + rho_weight(kk) * d0                             
+                        xx(1:nGvec,jx,jy,jz-lbz) = xx(1:nGvec,jx,jy,jz-lbz) + x_weight(1:nGvec,kk) * d0                
                     end if
                 end do
 
             end do
  
+
+
+         !---    add the padding around the x stored region by extrapolating the derivative(s)    
+            do jy = lby,uby
+                do jx = lbx,ubx
+                    xx(:,jx,jy,-1) =  3*xx(:,jx,jy,0) - 3*xx(:,jx,jy,+1) + xx(:,jx,jy,+2)               !   best fit to x(-1) given x(0),x(1),x(2) 
+                end do
+            end do
+            do jy = lby,uby
+                do jx = lbx,ubx
+                    xx(:,jx,jy,ubz-lbz+1) =  xx(:,jx,jy,ubz-lbz-2) - 3*xx(:,jx,jy,ubz-lbz-1) + 3*xx(:,jx,jy,ubz-lbz) 
+                end do
+            end do
+
+            do jz = -1,ubz+1-lbz
+                do jx = lbx,ubx
+                    xx(:,jx,lby-1,jz) =  3*xx(:,jx,lby,jz) - 3*xx(:,jx,lby+1,jz) + xx(:,jx,lby+2,jz)
+                end do
+            end do
+            do jz = -1,ubz+1-lbz
+                do jx = lbx,ubx
+                    xx(:,jx,uby+1,jz) =  xx(:,jx,uby-2,jz) - 3*xx(:,jx,uby-1,jz) + 3*xx(:,jx,uby,jz) 
+                end do
+            end do
+
+            do jz = -1,ubz+1-lbz
+                do jy = lby-1,uby+1
+                    xx(:,lbx-1,jy,jz) =  3*xx(:,lbx,jy,jz) - 3*xx(:,lbx+1,jy,jz) + xx(:,lbx+2,jy,jz)
+                end do
+            end do
+            do jz = -1,ubz+1-lbz
+                do jy = lby-1,uby+1
+                    xx(:,ubx+1,jy,jz) =  xx(:,ubx-2,jy,jz) - 3*xx(:,ubx-1,jy,jz) + 3*xx(:,ubx,jy,jz) 
+                end do
+            end do
+
+       !---    ensure x is phase factor ( should have |x|=1 )
+             do jz = -1,ubz+1-lbz
+                do jy = lby-1,uby+1
+                    do jx = lbx-1,ubx+1
+                        do jj = 1,nGvec
+                            d32 = abs( xx(jj,jx,jy,jz) )
+                            if (d32>0) then
+                                xx(jj,jx,jy,jz) = xx(jj,jx,jy,jz)/d32
+                            else    
+                                xx(jj,jx,jy,jz) = 1.0
+                            end if
+                        end do
+                    end do
+                end do
+            end do
+
+            if (rank==0) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - in bounds ",nInBufferedBounds,"/",myNatoms
             if (rank==0) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - computing x* grad x"
-         !---    add the padding around the x stored region by extrapolating the derivative           
-             do jy = lby,uby
-                 do jx = lbx,ubx
-                     xx(:,jx,jy,lbz-1) =  3*xx(:,jx,jy,lbz) - 3*xx(:,jx,jy,lbz+1) + xx(:,jx,jy,lbz+2)
-                 end do
-             end do
-             do jy = lby,uby
-                 do jx = lbx,ubx
-                     xx(:,jx,jy,ubz+1) =  xx(:,jx,jy,ubz-2) - 3*xx(:,jx,jy,ubz-1) + 3*xx(:,jx,jy,ubz) 
-                 end do
-             end do
-
-             do jz = lbz-1,ubz+1
-                 do jx = lbx,ubx
-                     xx(:,jx,lby-1,jz) =  3*xx(:,jx,lby,jz) - 3*xx(:,jx,lby+1,jz) + xx(:,jx,lby+2,jz)
-                 end do
-             end do
-             do jz = lbz-1,ubz+1
-                 do jx = lbx,ubx
-                     xx(:,jx,uby+1,jz) =  xx(:,jx,uby-2,jz) - 3*xx(:,jx,uby-1,jz) + 3*xx(:,jx,uby,jz) 
-                 end do
-             end do
-
-             do jz = lbz-1,ubz+1
-                 do jy = lby-1,uby+1
-                     xx(:,lbx-1,jy,jz) =  3*xx(:,lbx,jy,jz) - 3*xx(:,lbx+1,jy,jz) + xx(:,lbx+2,jy,jz)
-                 end do
-             end do
-             do jz = lbz-1,ubz+1
-                 do jy = lby-1,uby+1
-                     xx(:,ubx+1,jy,jz) =  xx(:,ubx-2,jy,jz) - 3*xx(:,ubx-1,jy,jz) + 3*xx(:,ubx,jy,jz) 
-                 end do
-             end do
-
 
 
         !---    compute x* grad x everywhere      
-            do jz = lbz,ubz
-                if (rank==0) call progressBar( jz+1-lbz,ubz+1-lbz )
+            do jz = 0,ubz-lbz
+                if (rank==0) call progressBar( jz+1,ubz+1-lbz )
                 do jy = lby,uby
 
-                    local_x(:,0:1,-1:1,-1:1) = xx(:,lbx-1:lbx,jy-1:jy+1,jz-1:jz+1) 
+                    local_x(:,0:1,-1:1,-1:1) = xx(:,lbx-1:lbx,jy-1:jy+1,jz-1:jz+1)
                     do jx = lbx,ubx
                         local_x(:,-1,:,:) = local_x(:,0,:,:)
                         local_x(:,0,:,:) = local_x(:,1,:,:)
-                        local_x(:,1,:,:) = xx(:,jx+1,jy-1:jy+1,jz-1:jz+1)
+                        local_x(:,1,:,:) = xx(:,jx+1,jy-1:jy+1,jz-1:jz+1) 
 
                         do jj = 1,nGvec
                             call twentySevenPointStencil( f = local_x(jj,:,:,:) , df = grad_x )
-                            grad_arg_x(1:3,jj,jx,jy,jz) = aimag( conjg( xx(jj,jx,jy,jz) )*grad_x(1:3) )
+                            conjgx = xx(jj,jx,jy,jz)
+                            if (abs(conjgx)>0) conjgx = conjg(conjgx)
+                            grad_arg_x(1:3,jj,jx,jy,jz) = aimag( conjgx*grad_x(1:3) ) 
                         end do
                         
                     end do
                 end do
             end do
 
-            grad_arg_x = grad_arg_x / aa        !   normalise by length
 
-            if (present(x)) then
-                x => xx
-            else
-                deallocate(xx)
+            if ((rank==0) .and. (Lib_ComputePhaseFactor_DBG)) then
+                print *,"minmaxavg r(1)",minval(rt(1,:)),maxval(rt(1,:)),sum(rt(1,:))/myNatoms
+                print *,"minmaxavg r(2)",minval(rt(2,:)),maxval(rt(2,:)),sum(rt(2,:))/myNatoms
+                print *,"minmaxavg r(3)",minval(rt(3,:)),maxval(rt(3,:)),sum(rt(3,:))/myNatoms
+
+                do jj = 1,nGvec
+                    print *,"minmaxavg Re x(",jj,")",minval(real(xx(jj,:,:,:))),maxval(real(xx(jj,:,:,:))),sum(real(xx(jj,:,:,:)))/(size(xx,dim=2)*size(xx,dim=3)*size(xx,dim=4))
+                end do
             end if
- 
+             
+
+            grad_arg_x = grad_arg_x * real( 1/aa , kind=real32 )         !   normalise by length
+
+            
+            deallocate(xx)
+           
+             
             return
 
         contains
@@ -297,87 +351,97 @@
             end function inBounds
 
 
+            pure logical function inBufferedBounds(jx,jy,jz)
+        !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        !*      is the node (jx,jy,jz) in bounds of the array x(:,:,:,:) + buffer
+                integer,intent(in)          ::      jx,jy,jz
+                inBufferedBounds = (jx>=lbx-nBuf).and.(jx<=ubx+nBuf)
+                inBufferedBounds = inBufferedBounds.and.(jy>=lby-nBuf).and.(jy<=uby+nBuf)
+                inBufferedBounds = inBufferedBounds.and.(jz>=lbz-nBuf).and.(jz<=ubz+nBuf)
+                return
+            end function inBufferedBounds
+
         end subroutine computePhaseFactor1
 
 
-        subroutine real_twentySevenPointStencil( f, f0,df )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
-    !*      approximate f = f0 + dfx x + dfy y + dfz z
-    !*      using a 27 point stencil
+    !     subroutine real_twentySevenPointStencil( f, f0,df )
+    ! !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+    ! !*      approximate f = f0 + dfx x + dfy y + dfz z
+    ! !*      using a 27 point stencil
 
-            real(kind=real64),dimension(-1:1,-1:1,-1:1),intent(in)              ::          f
-            real(kind=real64),intent(out),optional                              ::          f0
-            real(kind=real64),dimension(3),intent(out),optional                 ::          df
+    !         real(kind=real64),dimension(-1:1,-1:1,-1:1),intent(in)              ::          f
+    !         real(kind=real64),intent(out),optional                              ::          f0
+    !         real(kind=real64),dimension(3),intent(out),optional                 ::          df
             
 
-        !---    weights of points in the stencil. w(r) = exp( - 2 r^2  )  
-            real(kind=real64),parameter             ::      W0 = 1.0d0          
-            real(kind=real64),parameter             ::      W1 = exp( - 2.0d0 )
-            real(kind=real64),parameter             ::      W2 = exp( - 4.0d0 )
-            real(kind=real64),parameter             ::      W3 = exp( - 6.0d0 )
+    !     !---    weights of points in the stencil. w(r) = exp( - 2 r^2  )  
+    !         real(kind=real64),parameter             ::      W0 = 1.0d0          
+    !         real(kind=real64),parameter             ::      W1 = exp( - 2.0d0 )
+    !         real(kind=real64),parameter             ::      W2 = exp( - 4.0d0 )
+    !         real(kind=real64),parameter             ::      W3 = exp( - 6.0d0 )
 
-        !---    stencils            
-            real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DX = reshape( (/        &
-                                                                                             -W3,.0d0,  W3,     &               !   -1,-1,-1 : 1,-1,-1
-                                                                                             -W2,.0d0,  W2,     &               !   -1, 0,-1 : 1, 0,-1
-                                                                                             -W3,.0d0,  W3,     &               !   -1, 1,-1 : 1, 1,-1
-                                                                                             -W2,.0d0,  W2,     &               !   -1,-1, 0 : 1,-1, 0
-                                                                                             -W1,.0d0,  W1,     &               !   -1, 0, 0 : 1, 0, 0
-                                                                                             -W2,.0d0,  W2,     &               !   -1, 1, 0 : 1, 1, 0
-                                                                                             -W3,.0d0,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
-                                                                                             -W2,.0d0,  W2,     &               !   -1, 0, 1 : 1, 0, 1
-                                                                                             -W3,.0d0,  W3      &               !   -1, 1, 1 : 1, 1, 1
-                                                                                             /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
+    !     !---    stencils            
+    !         real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DX = reshape( (/        &
+    !                                                                                          -W3,.0d0,  W3,     &               !   -1,-1,-1 : 1,-1,-1
+    !                                                                                          -W2,.0d0,  W2,     &               !   -1, 0,-1 : 1, 0,-1
+    !                                                                                          -W3,.0d0,  W3,     &               !   -1, 1,-1 : 1, 1,-1
+    !                                                                                          -W2,.0d0,  W2,     &               !   -1,-1, 0 : 1,-1, 0
+    !                                                                                          -W1,.0d0,  W1,     &               !   -1, 0, 0 : 1, 0, 0
+    !                                                                                          -W2,.0d0,  W2,     &               !   -1, 1, 0 : 1, 1, 0
+    !                                                                                          -W3,.0d0,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
+    !                                                                                          -W2,.0d0,  W2,     &               !   -1, 0, 1 : 1, 0, 1
+    !                                                                                          -W3,.0d0,  W3      &               !   -1, 1, 1 : 1, 1, 1
+    !                                                                                          /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
 
-            real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DY = reshape( (/        &
-                                                                                             -W3, -W2, -W3,     &               !   -1,-1,-1 : 1,-1,-1
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 0,-1 : 1, 0,-1
-                                                                                              W3,  W2,  W3,     &               !   -1, 1,-1 : 1, 1,-1
-                                                                                             -W2, -W1 ,-W2,     &               !   -1,-1, 0 : 1,-1, 0
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 0, 0 : 1, 0, 0
-                                                                                              W2,  W1,  W2,     &               !   -1, 1, 0 : 1, 1, 0
-                                                                                             -W3, -W2, -W3,     &               !   -1,-1, 1 : 1,-1, 1    
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 0, 1 : 1, 0, 1
-                                                                                              W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
-                                                                                             /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
+    !         real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DY = reshape( (/        &
+    !                                                                                          -W3, -W2, -W3,     &               !   -1,-1,-1 : 1,-1,-1
+    !                                                                                         .0d0,.0d0,.0d0,     &               !   -1, 0,-1 : 1, 0,-1
+    !                                                                                           W3,  W2,  W3,     &               !   -1, 1,-1 : 1, 1,-1
+    !                                                                                          -W2, -W1 ,-W2,     &               !   -1,-1, 0 : 1,-1, 0
+    !                                                                                         .0d0,.0d0,.0d0,     &               !   -1, 0, 0 : 1, 0, 0
+    !                                                                                           W2,  W1,  W2,     &               !   -1, 1, 0 : 1, 1, 0
+    !                                                                                          -W3, -W2, -W3,     &               !   -1,-1, 1 : 1,-1, 1    
+    !                                                                                         .0d0,.0d0,.0d0,     &               !   -1, 0, 1 : 1, 0, 1
+    !                                                                                           W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
+    !                                                                                          /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
 
-            real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DZ = reshape( (/        &
-                                                                                             -W3, -W2, -W3,     &               !   -1,-1,-1 : 1,-1,-1
-                                                                                             -W2, -W1, -W2,     &               !   -1, 0,-1 : 1, 0,-1
-                                                                                             -W3, -W2, -W3,     &               !   -1, 1,-1 : 1, 1,-1
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1,-1, 0 : 1,-1, 0
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 0, 0 : 1, 0, 0
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 1, 0 : 1, 1, 0
-                                                                                              W3,  W2,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
-                                                                                              W2,  W1,  W2,     &               !   -1, 0, 1 : 1, 0, 1
-                                                                                              W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
-                                                                                             /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
+    !         real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DZ = reshape( (/        &
+    !                                                                                          -W3, -W2, -W3,     &               !   -1,-1,-1 : 1,-1,-1
+    !                                                                                          -W2, -W1, -W2,     &               !   -1, 0,-1 : 1, 0,-1
+    !                                                                                          -W3, -W2, -W3,     &               !   -1, 1,-1 : 1, 1,-1
+    !                                                                                         .0d0,.0d0,.0d0,     &               !   -1,-1, 0 : 1,-1, 0
+    !                                                                                         .0d0,.0d0,.0d0,     &               !   -1, 0, 0 : 1, 0, 0
+    !                                                                                         .0d0,.0d0,.0d0,     &               !   -1, 1, 0 : 1, 1, 0
+    !                                                                                           W3,  W2,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
+    !                                                                                           W2,  W1,  W2,     &               !   -1, 0, 1 : 1, 0, 1
+    !                                                                                           W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
+    !                                                                                          /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
 
                                                
-            real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_0  = reshape( (/        &
-                                                                                              W3,  W2,  W3,     &               !   -1,-1,-1 : 1,-1,-1
-                                                                                              W2,  W1,  W2,     &               !   -1, 0,-1 : 1, 0,-1
-                                                                                              W3,  W2,  W3,     &               !   -1, 1,-1 : 1, 1,-1
-                                                                                              W2,  W1,  W2,     &               !   -1,-1, 0 : 1,-1, 0
-                                                                                              W1,  W0,  W1,     &               !   -1, 0, 0 : 1, 0, 0
-                                                                                              W2,  W1,  W2,     &               !   -1, 1, 0 : 1, 1, 0
-                                                                                              W3,  W2,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
-                                                                                              W2,  W1,  W2,     &               !   -1, 0, 1 : 1, 0, 1
-                                                                                              W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
-                                                                                             /)  , (/3,3,3/) ) / ( W0 + 6*W1 + 12*W2 + 8*W3 )
+    !         real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_0  = reshape( (/        &
+    !                                                                                           W3,  W2,  W3,     &               !   -1,-1,-1 : 1,-1,-1
+    !                                                                                           W2,  W1,  W2,     &               !   -1, 0,-1 : 1, 0,-1
+    !                                                                                           W3,  W2,  W3,     &               !   -1, 1,-1 : 1, 1,-1
+    !                                                                                           W2,  W1,  W2,     &               !   -1,-1, 0 : 1,-1, 0
+    !                                                                                           W1,  W0,  W1,     &               !   -1, 0, 0 : 1, 0, 0
+    !                                                                                           W2,  W1,  W2,     &               !   -1, 1, 0 : 1, 1, 0
+    !                                                                                           W3,  W2,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
+    !                                                                                           W2,  W1,  W2,     &               !   -1, 0, 1 : 1, 0, 1
+    !                                                                                           W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
+    !                                                                                          /)  , (/3,3,3/) ) / ( W0 + 6*W1 + 12*W2 + 8*W3 )
 
-            if (present(f0)) then
-                f0 = sum( STENCIL_0*f )
-            end if
+    !         if (present(f0)) then
+    !             f0 = sum( STENCIL_0*f )
+    !         end if
 
-            if (present(df)) then
-                df(1) = sum( STENCIL_DX*f )
-                df(2) = sum( STENCIL_DY*f )
-                df(3) = sum( STENCIL_DZ*f )
-            end if
+    !         if (present(df)) then
+    !             df(1) = sum( STENCIL_DX*f )
+    !             df(2) = sum( STENCIL_DY*f )
+    !             df(3) = sum( STENCIL_DZ*f )
+    !         end if
 
-            return
-        end subroutine real_twentySevenPointStencil
+    !         return
+    !     end subroutine real_twentySevenPointStencil
  
 
 
@@ -387,56 +451,59 @@
     !*      approximate f = f0 + dfx x + dfy y + dfz z
     !*      using a 27 point stencil
 
-            complex(kind=real64),dimension(-1:1,-1:1,-1:1),intent(in)              ::          f
-            complex(kind=real64),intent(out),optional                              ::          f0
-            complex(kind=real64),dimension(3),intent(out),optional                 ::          df
+            complex(kind=real32),dimension(-1:,-1:,-1:),intent(in)                  ::          f
+            complex(kind=real32),intent(out),optional                               ::          f0
+            complex(kind=real32),dimension(3),intent(out),optional                  ::          df
             
 
         !---    weights of points in the stencil. w(r) = exp( - 2 r^2  )  
-            real(kind=real64),parameter             ::      W0 = 1.0d0          
-            real(kind=real64),parameter             ::      W1 = exp( - 2.0d0 )
-            real(kind=real64),parameter             ::      W2 = exp( - 4.0d0 )
-            real(kind=real64),parameter             ::      W3 = exp( - 6.0d0 )
+            real(kind=real32),parameter             ::      W0 = 1.0          
+            ! real(kind=real32),parameter             ::      W1 = exp( - 2.0 )
+            ! real(kind=real32),parameter             ::      W2 = exp( - 4.0 )
+            ! real(kind=real32),parameter             ::      W3 = exp( - 6.0 )
+            real(kind=real32),parameter             ::      W1 = exp( - 2.0 )
+            real(kind=real32),parameter             ::      W2 = W1
+            real(kind=real32),parameter             ::      W3 = W1
 
-        !---    stencils            
-            real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DX = reshape( (/        &
-                                                                                             -W3,.0d0,  W3,     &               !   -1,-1,-1 : 1,-1,-1
-                                                                                             -W2,.0d0,  W2,     &               !   -1, 0,-1 : 1, 0,-1
-                                                                                             -W3,.0d0,  W3,     &               !   -1, 1,-1 : 1, 1,-1
-                                                                                             -W2,.0d0,  W2,     &               !   -1,-1, 0 : 1,-1, 0
-                                                                                             -W1,.0d0,  W1,     &               !   -1, 0, 0 : 1, 0, 0
-                                                                                             -W2,.0d0,  W2,     &               !   -1, 1, 0 : 1, 1, 0
-                                                                                             -W3,.0d0,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
-                                                                                             -W2,.0d0,  W2,     &               !   -1, 0, 1 : 1, 0, 1
-                                                                                             -W3,.0d0,  W3      &               !   -1, 1, 1 : 1, 1, 1
-                                                                                             /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
+        ! !---    stencils            
+        !     real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DX = reshape( (/        &
+        !                                                                                      -W3,.0d0,  W3,     &               !   -1,-1,-1 : 1,-1,-1
+        !                                                                                      -W2,.0d0,  W2,     &               !   -1, 0,-1 : 1, 0,-1
+        !                                                                                      -W3,.0d0,  W3,     &               !   -1, 1,-1 : 1, 1,-1
+        !                                                                                      -W2,.0d0,  W2,     &               !   -1,-1, 0 : 1,-1, 0
+        !                                                                                      -W1,.0d0,  W1,     &               !   -1, 0, 0 : 1, 0, 0
+        !                                                                                      -W2,.0d0,  W2,     &               !   -1, 1, 0 : 1, 1, 0
+        !                                                                                      -W3,.0d0,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
+        !                                                                                      -W2,.0d0,  W2,     &               !   -1, 0, 1 : 1, 0, 1
+        !                                                                                      -W3,.0d0,  W3      &               !   -1, 1, 1 : 1, 1, 1
+        !                                                                                      /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
 
-            real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DY = reshape( (/        &
-                                                                                             -W3, -W2, -W3,     &               !   -1,-1,-1 : 1,-1,-1
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 0,-1 : 1, 0,-1
-                                                                                              W3,  W2,  W3,     &               !   -1, 1,-1 : 1, 1,-1
-                                                                                             -W2, -W1 ,-W2,     &               !   -1,-1, 0 : 1,-1, 0
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 0, 0 : 1, 0, 0
-                                                                                              W2,  W1,  W2,     &               !   -1, 1, 0 : 1, 1, 0
-                                                                                             -W3, -W2, -W3,     &               !   -1,-1, 1 : 1,-1, 1    
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 0, 1 : 1, 0, 1
-                                                                                              W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
-                                                                                             /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
+        !     real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DY = reshape( (/        &
+        !                                                                                      -W3, -W2, -W3,     &               !   -1,-1,-1 : 1,-1,-1
+        !                                                                                     .0d0,.0d0,.0d0,     &               !   -1, 0,-1 : 1, 0,-1
+        !                                                                                       W3,  W2,  W3,     &               !   -1, 1,-1 : 1, 1,-1
+        !                                                                                      -W2, -W1 ,-W2,     &               !   -1,-1, 0 : 1,-1, 0
+        !                                                                                     .0d0,.0d0,.0d0,     &               !   -1, 0, 0 : 1, 0, 0
+        !                                                                                       W2,  W1,  W2,     &               !   -1, 1, 0 : 1, 1, 0
+        !                                                                                      -W3, -W2, -W3,     &               !   -1,-1, 1 : 1,-1, 1    
+        !                                                                                     .0d0,.0d0,.0d0,     &               !   -1, 0, 1 : 1, 0, 1
+        !                                                                                       W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
+        !                                                                                      /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
 
-            real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DZ = reshape( (/        &
-                                                                                             -W3, -W2, -W3,     &               !   -1,-1,-1 : 1,-1,-1
-                                                                                             -W2, -W1, -W2,     &               !   -1, 0,-1 : 1, 0,-1
-                                                                                             -W3, -W2, -W3,     &               !   -1, 1,-1 : 1, 1,-1
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1,-1, 0 : 1,-1, 0
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 0, 0 : 1, 0, 0
-                                                                                            .0d0,.0d0,.0d0,     &               !   -1, 1, 0 : 1, 1, 0
-                                                                                              W3,  W2,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
-                                                                                              W2,  W1,  W2,     &               !   -1, 0, 1 : 1, 0, 1
-                                                                                              W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
-                                                                                             /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
+        !     real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DZ = reshape( (/        &
+        !                                                                                      -W3, -W2, -W3,     &               !   -1,-1,-1 : 1,-1,-1
+        !                                                                                      -W2, -W1, -W2,     &               !   -1, 0,-1 : 1, 0,-1
+        !                                                                                      -W3, -W2, -W3,     &               !   -1, 1,-1 : 1, 1,-1
+        !                                                                                     .0d0,.0d0,.0d0,     &               !   -1,-1, 0 : 1,-1, 0
+        !                                                                                     .0d0,.0d0,.0d0,     &               !   -1, 0, 0 : 1, 0, 0
+        !                                                                                     .0d0,.0d0,.0d0,     &               !   -1, 1, 0 : 1, 1, 0
+        !                                                                                       W3,  W2,  W3,     &               !   -1,-1, 1 : 1,-1, 1    
+        !                                                                                       W2,  W1,  W2,     &               !   -1, 0, 1 : 1, 0, 1
+        !                                                                                       W3,  W2,  W3      &               !   -1, 1, 1 : 1, 1, 1
+        !                                                                                      /)  , (/3,3,3/) ) / ( 2*W1 + 8*W2 + 8*W3 )
 
                                                
-            real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_0  = reshape( (/        &
+            real(kind=real32),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_0  = reshape( (/        &
                                                                                               W3,  W2,  W3,     &               !   -1,-1,-1 : 1,-1,-1
                                                                                               W2,  W1,  W2,     &               !   -1, 0,-1 : 1, 0,-1
                                                                                               W3,  W2,  W3,     &               !   -1, 1,-1 : 1, 1,-1
@@ -452,10 +519,24 @@
                 f0 = sum( STENCIL_0*f )
             end if
 
-            if (present(df)) then
-                df(1) = sum( STENCIL_DX*f )
-                df(2) = sum( STENCIL_DY*f )
-                df(3) = sum( STENCIL_DZ*f )
+            ! if (present(df)) then
+            !     df(1) = sum( STENCIL_DX*f )
+            !     df(2) = sum( STENCIL_DY*f )
+            !     df(3) = sum( STENCIL_DZ*f )                
+            ! end if
+
+            
+            if (present(df)) then            
+                df(1) = W3*( -f(-1,-1,-1)-f(-1,1,-1)-f(-1,-1,1)-f(-1,1,1) + f(1,-1,-1)+f(1,1,-1)+f(1,-1,1)+f(1,1,1) )     &
+                      + W2*( -f(-1,0,-1)-f(-1,0,1)-f(-1,-1,0)-f(-1,1,0) + f(1,0,-1)+f(1,0,1)+f(1,-1,0)+f(1,1,0) )         &
+                      + W1*( -f(-1,0,0) + f(1,0,0) )         
+                df(2) = W3*( -f(-1,-1,-1)-f(1,-1,-1)-f(-1,-1,1)-f(1,-1,1) + f(-1,1,-1)+f(1,1,-1)+f(-1,1,1)+f(1,1,1) )     &
+                      + W2*( -f(0,-1,-1)-f(0,-1,1)-f(-1,-1,0)-f(1,-1,0) + f(0,1,-1)+f(0,1,1)+f(-1,1,0)+f(1,1,0) )         &
+                      + W1*( -f(0,-1,0) + f(0,1,0) )         
+                df(3) = W3*( -f(-1,-1,-1)-f(1,-1,-1)-f(-1,1,-1)-f(1,1,-1) + f(-1,-1,1)+f(1,-1,1)+f(-1,1,1)+f(1,1,1) )     &
+                      + W2*( -f(-1,0,-1)-f(1,0,-1)-f(0,-1,-1)-f(0,1,-1) + f(-1,0,1)+f(1,0,1)+f(0,-1,1)+f(0,1,1) )         &
+                      + W1*( -f(0,0,-1) + f(0,0,1) )         
+                df = df / ( 2*W1 + 8*W2 + 8*W3 )
             end if
 
             return
@@ -581,30 +662,53 @@
         end subroutine computeKernels
 
             
-        elemental real(kind=real64) function smoothstep( x )
+        elemental real(kind=real32) function smoothstep32( x )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      smoothstep function returns 0 for x<=0, 1 for x>=1, and smooth polynomial between
+            real(kind=real32),intent(in)        ::      x
+            if (x<=0) then
+                smoothstep32 = 0.0 
+            else if (x>=1) then
+                smoothstep32 = 1.0 
+            else
+                smoothstep32 = x*x*x*(10-15*x+6*x*x)
+            end if
+        end function smoothstep32
+
+        elemental real(kind=real64) function smoothstep64( x )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      smoothstep function returns 0 for x<=0, 1 for x>=1, and smooth polynomial between
             real(kind=real64),intent(in)        ::      x
             if (x<=0) then
-                smoothstep = 0.0d0
+                smoothstep64 = 0.0d0
             else if (x>=1) then
-                smoothstep = 1.0d0
+                smoothstep64 = 1.0d0
             else
-                smoothstep = x*x*x*(10-15*x+6*x*x)
+                smoothstep64 = x*x*x*(10-15*x+6*x*x)
             end if
-        end function smoothstep
+        end function smoothstep64
 
-        elemental real(kind=real64) function densityScale( rho,omega )
+        elemental real(kind=real32) function densityScale32( rho,omega )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !*      smooth density function, returns 0 for rho*omega <= 0.5, 1 for rho*omega >= 1
+            real(kind=real32),intent(in)            ::      rho
+            real(kind=real32),intent(in)            ::      omega
+            real(kind=real32)           ::          xx
+            xx = rho*omega
+            densityScale32 = smoothstep32( xx )
+            return
+        end function densityScale32
+
+        elemental real(kind=real64) function densityScale64( rho,omega )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      smooth density function, returns 0 for rho*omega <= 0.5, 1 for rho*omega >= 1
             real(kind=real64),intent(in)            ::      rho
             real(kind=real64),intent(in)            ::      omega
             real(kind=real64)           ::          xx
-            !xx = 2*rho*omega - 1
             xx = rho*omega
-            densityScale =  smoothstep( xx )
+            densityScale64 =  smoothstep64( xx )
             return
-        end function densityScale 
+        end function densityScale64
 
         subroutine Lib_ComputePhaseFactor_init_MPI()
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

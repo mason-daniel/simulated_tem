@@ -383,6 +383,11 @@
 
         
          real(kind=real64) big,dum,pivinv
+
+
+        irow = 0 
+        icol = 0
+
          do 11 j=1,n
             ipiv(j)=0
   11    continue

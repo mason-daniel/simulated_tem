@@ -105,7 +105,7 @@
         mynAtoms = 0
         
         do ii = 1,NATOMS
-            call periodicCopies(as,is,x(:,ii),np,xtp)
+            call periodicCopies(as,is,real( x(:,ii),kind=real32 ),np,xtp)
             do jj = 1,np
                 if (inMyCell(is,xtp(:,jj),buffered=.true.)) then
                     mynAtoms = mynAtoms + 1

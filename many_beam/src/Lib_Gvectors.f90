@@ -319,12 +319,11 @@
         pure subroutine rotate0(this,R)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      The conventional unit cell has been rotated by R.
-    !*      so the reciprocal lattice has been rotated by R^T
     !*      apply this rotation to the lattice vectors, so getg() will show the correct new direction
     !*      CAUTION - you _can_ undo this with rotate(this,transpose(R)), but this will slowly accumulate errors 
             type(Gvectors),intent(inout)                    ::      this
             real(kind=real64),dimension(3,3),intent(in)     ::      R
-            this%B = matmul( transpose(R), this%B )
+            this%B = matmul( R, this%B )
             return
         end subroutine rotate0
 
@@ -556,27 +555,29 @@
         end function getMinusg
 
         pure logical function isPositiveg(this,i)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      returns true if g-vector is the "+ve" version
-    !*      this is the case if no reverse exists, if g=000, or if the index of -g is higher than the index of g.
-            type(Gvectors),intent(in)                      ::      this    
+    !*      this is the case if no reverse exists, or if the index of -g is higher than the index of g.
+            type(Gvectors),intent(in)                       ::      this    
             integer,intent(in)                              ::      i
 
-            isPositiveg = (this%minusg(i)==0) .or. (this%minusg(i)>=i)
+            isPositiveg = (this%minusg(i)==LIB_GVECTORS_UNSET) .or. (this%minusg(i)>i)
             return
         end function isPositiveg
 
         
         pure integer function nPositiveg(this)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      returns the count of g-vector which are the "+ve" versions
     !*      this is the case if no reverse exists, if g=000, or if the index of -g is higher than the index of g.
-            type(Gvectors),intent(in)                      ::      this    
+            type(Gvectors),intent(in)                       ::      this    
+            
             integer         ::      ii
             nPositiveg = 0
             do ii = 1,this%n
                 if (isPositiveg(this,ii)) nPositiveg = nPositiveg + 1
             end do
+         
             return
         end function nPositiveg
 

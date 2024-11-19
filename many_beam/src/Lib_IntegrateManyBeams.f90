@@ -59,10 +59,10 @@
         integer(kind=STATUS),private,parameter          ::      LIB_IMB_MANYBEAM_SET    = 8_STATUS
         integer(kind=STATUS),private,parameter          ::      LIB_IMB_CSTRUCTFACT_SET = 16_STATUS
         integer(kind=STATUS),private,parameter          ::      LIB_IMB_IMAGESPACE_SET  = 32_STATUS
-        integer(kind=STATUS),private,parameter          ::      LIB_IMB_PHASEFIELD_SET  = 64_STATUS
         integer(kind=STATUS),private,parameter          ::      LIB_IMB_SIM_RESULT      = 128_STATUS
         
 
+        logical,public                      ::      LIB_IMB_DBG = .false.
         real(kind=real64),parameter         ::      PI = 3.14159265390d0
 
         integer,private                     ::      rank = 0, nProcs = 1
@@ -90,40 +90,42 @@
 
         type,public     ::      phi_slice
             private
-            complex(kind=real64),dimension(:,:,:),pointer     ::      phi                 !   (0:nG,lbx:ubx,lby:uby,lbz:ubz ) the solution 
+            complex(kind=real64),dimension(:,:,:),pointer       ::      phi                 !   (0:nG,lbx:ubx,lby:uby ) the solution 
         end type
 
         type,public     ::      IntegrateManyBeams
             private
-            character(len=XYZFILE_ATOMNAMELENGTH)               ::      element
-            type(Lattice)                                       ::      latt
+            
             type(AtomSpace)                                     ::      as
             type(ImagingSpace)                                  ::      is
             type(Gvectors),pointer                              ::      gv
-            integer                                             ::      nPrec            !   how many sets used for precession averaging?
-            real(kind=real64)                                   ::      precAngle       !   precession angle (rad)
             
-            real(kind=real64),dimension(3,3)                    ::      dfg_bar         !   mean deformation gradient, used to set g-vectors 
-            real(kind=real64)                                   ::      T               !   calculation temperature
-            real(kind=real64)                                   ::      V               !   electron acceleration voltage (V)
-            type(ManyBeam),dimension(:),pointer                 ::      mb
+            real(kind=real64)                                   ::      T                   !   calculation temperature
+            real(kind=real64)                                   ::      V                   !   electron acceleration voltage (V)
+            complex(kind=real64),dimension(:),pointer           ::      xi                  !   (1:nG2) complex extinction distances for all vectors g" = g - g'
+            integer                                             ::      nPrec               !   how many sets used for precession averaging?
+            real(kind=real64)                                   ::      precAngle           !   precession angle (rad)
             real(kind=real64)                                   ::      a , sigma           !   cell side , imaging blur
             real(kind=real64)                                   ::      a0                  !   characteristic lattice size used to scale g-vectors
-            real(kind=real64)                                   ::      omega0              !   volume per atom
-            complex(kind=real64),dimension(:),pointer           ::      xi                  !   (1:nG2) complex extinction distances for all vectors g" = g - g'
-            real(kind=real64),dimension(:,:,:,:,:),pointer      ::      grad_arg_x          !   (3,nG,lbx:ubx,lby:uby,lbz:ubz) pointer to chunk of phase factor gradients        
-            real(kind=real64),dimension(:,:,:),pointer          ::      rho                 !   (lbx:ubx,lby:uby,lbz:ubz) pointer to chunk of atom densities
+            integer                                             ::      M = 4               !   a = a0/M
+            integer                                             ::      zlayers = 20        !   allocate rho,grad_arg_x in blocks of Zlayers
 
             integer                                             ::      nAtoms
-            real(kind=real64),dimension(:,:),pointer            ::      r                   !   (3,nAtoms) positions of atoms
-
-            type(phi_slice),dimension(:),pointer                ::      slice               !   (1:nPrec) the solution
+            character(len=XYZFILE_ATOMNAMELENGTH)               ::      element
+            type(Lattice)                                       ::      latt
+            real(kind=real64),dimension(3,3)                    ::      dfg_bar             !   mean deformation gradient, used to set g-vectors 
+            real(kind=real32),dimension(:,:),pointer            ::      r                   !   (3,nAtoms) positions of atoms, read by readInputXyzFile(), converted to imaging space units by setImagingSpace()
+            real(kind=real64)                                   ::      omega0              !   volume per atom
             
-
             logical                                             ::      columnar            !   use columnar approximation
             logical                                             ::      lossy               !   use imaginary parts of crystal srtucture factor
-
             integer(kind=STATUS)                                ::      status              !   status of calculation
+
+            type(ManyBeam),dimension(:),pointer                 ::      mb
+            real(kind=real32),dimension(:,:,:,:,:),pointer      ::      grad_arg_x          !   (3,nG,lbx:ubx,lby:uby,lbz:ubz) pointer to chunk of phase factor gradients        
+            real(kind=real32),dimension(:,:,:),pointer          ::      rho                 !   (lbx:ubx,lby:uby,lbz:ubz) pointer to chunk of atom densities            
+            type(phi_slice),dimension(:),pointer                ::      slice               !   (1:nPrec) the solution
+
         end type
 
 
@@ -163,7 +165,13 @@
             module procedure            getA0
         end interface
 
-        interface           sanityCheck
+        interface       changeGvectors
+            module procedure            changeGvectors0
+            module procedure            changeGvectors1
+        end interface
+        
+
+        interface       sanityCheck
             module procedure            sanityCheck0
         end interface
         
@@ -201,7 +209,7 @@
 
 
 
-        function IntegrateManyBeams_ctor1( latticename,a0_in,filename,T,V,nPrec,precAngle,columnar,lossy  ) result(this)
+        function IntegrateManyBeams_ctor1( latticename,a0_in,filename,T,V,nPrec,precAngle,columnar,lossy,rho_in  ) result(this)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                  
     !*      default constructor. Intended to read the .xyz input file and determine basic parameters of the calculation.
     !*      Sets a default large number of g-vectors and no foil tilt.
@@ -220,6 +228,7 @@
             real(kind=real64),intent(in)                ::      precAngle               !   precession angle (rad)
             logical,intent(in),optional                 ::      columnar                !   use columnar approximation
             logical,intent(in),optional                 ::      lossy                   !   use imaginary parts of crystal structure factor
+            real(kind=real64),intent(in),optional       ::      rho_in                  !   radius of reflections to select
             type(IntegrateManyBeams)                    ::      this
 
             real(kind=real64),dimension(3)              ::      xyz_offset              !   offset of atom positions read from xyz file
@@ -294,7 +303,7 @@
                 print *,"^^^^^^^^^^^^^^^^^"
             end if
             allocate(this%gv)
-            call changeGvectors( this,rule = LIB_IMB_SOLZ, rho_in = 4.0d0 )  
+            call changeGvectors( this,rule = LIB_IMB_FOLZ, rho_in = rho_in )  
              
             return
         end function IntegrateManyBeams_ctor1
@@ -319,9 +328,8 @@
             deallocate(this%slice)
             deallocate(this%mb)
       
-            if (this%nAtoms>0) then
-                deallocate(this%r)
-            end if
+            if (this%nAtoms>0)  deallocate(this%r)
+          
             
             if (associated(this%grad_arg_x)) deallocate(this%grad_arg_x)            
             if (associated(this%rho)) deallocate(this%rho)
@@ -341,6 +349,8 @@
             uu = 6 ; if (present(u)) uu = u
             oo = 0 ; if (present(o)) oo = o
             write(unit=uu,fmt='(a,i6,a)') repeat(" ",oo)//"IntegrateManyBeams [nPrec=",this%nPrec,"]"
+            write(unit=uu,fmt='(a,f10.2,a)') repeat(" ",oo+4)//"Temperature      : ",this%T," (K)"
+            write(unit=uu,fmt='(a,f10.2,a)') repeat(" ",oo+4)//"Electron voltage : ",this%V," (keV)"
             call report(this%latt,uu,oo+4)
             call report(this%gv,uu,oo+4)
             call report(this%as,uu,oo+4)
@@ -353,8 +363,25 @@
 
     !---
 
-        subroutine changeGvectors(this,rule,rho_in,hkl_in)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+        subroutine changeGvectors0(this,hkl_in)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+    !*      given the gvectors may or may not be allocated, 
+    !*      update the list of g-vectors to a set containing out to |hkl| <= rho_in
+    !*      without changing the input atom positions or lattice.
+    !*      This subroutine _will_ construct the crystal structure factors and the manybeams 
+    !*      This subroutine _will not_ construct the imaging space, phase field/density, or allocate memory for solution
+    !*      special case- set two beam
+            type(IntegrateManyBeams),intent(inout)      ::      this
+            integer,dimension(:),intent(in)             ::      hkl_in
+            integer,dimension(size(hkl_in,dim=1),1)     ::      hkl_out
+            hkl_out(:,1) = hkl_in(:)
+            call changeGvectors1(this,rule = LIB_IMB_KEEP_ALL_GVEC,hkl_in = hkl_out)
+            return
+        end subroutine changeGvectors0
+
+        subroutine changeGvectors1(this,rule,rho_in,hkl_in)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      given the gvectors may or may not be allocated, 
     !*      update the list of g-vectors to a set containing out to |hkl| <= rho_in
     !*      without changing the input atom positions or lattice.
@@ -362,9 +389,8 @@
     !*      This subroutine _will not_ construct the imaging space, phase field/density, or allocate memory for solution
             type(IntegrateManyBeams),intent(inout)      ::      this
             integer(kind=SELECTION_RULE),intent(in)     ::      rule
-            !real(kind=real64),intent(in)                ::      a0          !   characteristic lengthscale, used to set magnitude of g-vectors.
             real(kind=real64),intent(in),optional       ::      rho_in
-            integer,dimension(:),intent(in),optional    ::      hkl_in
+            integer,dimension(:,:),intent(in),optional  ::      hkl_in
 
             type(Gvectors)                      ::      gv2             !   a set of g-vectors with double the radius, used to compute all the crystal structure factors.
             integer                             ::      nG2
@@ -373,9 +399,9 @@
             real(kind=real64)                               ::      dphi
             integer,dimension(:,:),allocatable              ::      hkl                 !   reflections
             complex(kind=real64),dimension(:),allocatable   ::      Vg                  !   crystal structure factor
-            real(kind=real64),dimension(3,3)    ::      RR,R0
+            real(kind=real64),dimension(3,3)    ::      RR!,R0
 
-            R0 = RotationMatrix_Identity
+            !R0 = RotationMatrix_Identity
 
             if (associated(this%gv)) then
                 call delete(this%gv)
@@ -386,15 +412,15 @@
             else if (present(hkl_in)) then
                 call setGvectors( this,rule,hkl_in=hkl_in )  
             else
-                call errorExit("changeGvectors error - need to call with either radius |hkl|<rho_in or specified vector [hkl_in]")
+                call errorExit("changeGvectors1 error - need to call with either radius |hkl|<rho_in or specified vector [hkl_in]")
             end if
-            call setGvectorsSet(this,.true.)
+            
             !call report(this%gv)
             
  
             gv2 = Gvectors_ctor(this%gv,doubleSet=.true.)
             nG2 = getn(gv2)
-            if (rank==0) print *,"Lib_IntegrateManyBeams::changeGvectors info - computing ",nG2," crystal structure factors"
+            if (rank==0) print *,"Lib_IntegrateManyBeams::changeGvectors1 info - computing ",nG2," crystal structure factors"
 
 
             if (associated(this%xi)) deallocate(this%xi)
@@ -437,26 +463,48 @@
                         write(*,fmt='(a12,a39,a39)') "reflection","V_g","xi_g"
                     end if
                 end if
-                do ii = 1,nG2  
-                    if (.not. this%lossy) then
-                        if (isMillerBravais(this%gv)) then
-                            write(*,fmt='(4i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," ) ",real(this%xi(ii))
+                if ( LIB_IMB_DBG .or. (nG2<=10) ) then
+                    do ii = 1,nG2  
+                        if (.not. this%lossy) then
+                            if (isMillerBravais(this%gv)) then
+                                write(*,fmt='(4i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," ) ",real(this%xi(ii))
+                            else
+                                write(*,fmt='(3i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," ) ",real(this%xi(ii))
+                            end if
                         else
-                            write(*,fmt='(3i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," ) ",real(this%xi(ii))
+                            if (isMillerBravais(this%gv)) then
+                                write(*,fmt='(4i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," )  (",real(this%xi(ii))," +i",aimag(this%xi(ii)),")"
+                            else
+                                write(*,fmt='(3i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," )  (",real(this%xi(ii))," +i",aimag(this%xi(ii)),")"
+                            end if
                         end if
-                    else
-                        if (isMillerBravais(this%gv)) then
-                            write(*,fmt='(4i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," )  (",real(this%xi(ii))," +i",aimag(this%xi(ii)),")"
+                    end do
+                else
+                    do ii = 1,nG2  
+                        if (.not. this%lossy) then
+                            if (isMillerBravais(this%gv)) then
+                                if (norm2( real(hkl(:,ii)) ) <= 2.0)    &
+                                write(*,fmt='(4i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," ) ",real(this%xi(ii))
+                            else
+                                if (norm2( real(hkl(:,ii)) ) <= 2.0)    &
+                                write(*,fmt='(3i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," ) ",real(this%xi(ii))
+                            end if
                         else
-                            write(*,fmt='(3i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," )  (",real(this%xi(ii))," +i",aimag(this%xi(ii)),")"
+                            if (isMillerBravais(this%gv)) then
+                                if (norm2( real(hkl(:,ii)) ) <= 2.0)    &
+                                write(*,fmt='(4i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," )  (",real(this%xi(ii))," +i",aimag(this%xi(ii)),")"
+                            else
+                                if (norm2( real(hkl(:,ii)) ) <= 2.0)    &
+                                write(*,fmt='(3i4,5(a,f16.8))') hkl(:,ii)," (",real(Vg(ii))," +i",aimag(Vg(ii))," )  (",real(this%xi(ii))," +i",aimag(this%xi(ii)),")"
+                            end if
                         end if
-                    end if
-                end do
+                    end do
+                end if
                 print *,""
             end if
 
 
-            if (rank==0) print *,"Lib_IntegrateManyBeams::changeGvectors info - initialising many-beam calculations"
+            if (rank==0) print *,"Lib_IntegrateManyBeams::changeGvectors1 info - initialising many-beam calculations"
 
            
             if (associated(this%mb)) then
@@ -467,20 +515,20 @@
                 allocate(this%mb(this%nPrec))
             end if
             kk = (/0,0,1/) * 2 * PI / wavelength( this%V ) 
-            this%mb(1) = ManyBeam_ctor(kk,this%gv,gv2,this%xi)
+            this%mb(1) = ManyBeam_ctor( geta(this),kk,this%gv,gv2,this%xi)
             if (this%nPrec > 2) then
                 !   precession
                 dphi = 2*PI / (this%nPrec-1)
                 do mm = 2,this%nPrec
                     RR = RotationMatrix_ctor( (/0.0d0,1.0d0,0.0d0/),this%precAngle )             !   rotation about y axis by precession angle 
                     RR = matmul( RotationMatrix_ctor( (/0.0d0,0.0d0,1.0d0/),(mm-2)*dphi ),RR )   !   rotation about z axis by angle phi 
-                    this%mb(mm) = ManyBeam_ctor( matmul(RR,kk),this%gv,gv2,this%xi )
+                    this%mb(mm) = ManyBeam_ctor( geta(this),matmul(RR,kk),this%gv,gv2,this%xi )
                 end do
             end if
             call setManyBeamSet(this,.true.)
             
             return
-        end subroutine changeGvectors
+        end subroutine changeGvectors1
 
         
 
@@ -532,9 +580,19 @@
             real(kind=real64),dimension(3,3),intent(in)     ::      R
             !real(kind=real64),dimension(3,3)     ::      RR
             integer             ::      mm
-
-            call rotate(this%gv,R)                                  !   update g-vectors - note that A -> R A, so reciprocal lattice B -> R^T B. The transpose is handled by rotate().
+            if (rank==0) then
+                print *,"Lib_IntegrateManyBeams::applyFoilTilt info - rotation matrix"
+                write(*,fmt='(3f16.8)') R(1,:)
+                write(*,fmt='(3f16.8)') R(2,:)
+                write(*,fmt='(3f16.8)') R(3,:)
+            end if
+            !call report(this%gv)
+            call rotate(this%gv,R)                                  !   update g-vectors - note that A -> R A, so reciprocal lattice B -> R B. 
+            !call report(this%gv)
             call setR(this%as,R)                                    !   update atom space
+
+            this%dfg_bar = matmul( R,this%dfg_bar )                         !   rotate crystal orientation
+
             do mm = 1,this%nPrec
                 call setOrientationDependence(this%mb(mm))          !   mb has a pointer to gv
             end do
@@ -612,10 +670,11 @@
             end do
 
 #ifdef MPI
-            allocate(I_tmp(0:nx-1,0:ny-1))
-            I_tmp = I
-            call MPI_REDUCE( I_tmp,I,nx*ny,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,ierror )
-            deallocate(I_tmp)
+            if (nprocs>1) then
+                allocate(I_tmp(0:nx-1,0:ny-1))
+                I_tmp = I
+                call MPI_REDUCE( I_tmp,I,nx*ny,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,ierror )
+            end if
 #endif        
 
             I = I / this%nPrec
@@ -623,12 +682,13 @@
             return
         end subroutine getIntensity0
 
-        subroutine getIntensity1(this,I_g)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        subroutine getIntensity1(this,I_g,maxIntensity)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      get the result at all g-vectors at the foil exit
-    !*      gather on rank 0. Equivalent to perfectLatticeIntensity when solution is found
+    !*      gather on rank 0. Equivalent to perfectLatticeIntensity, but this will also produce solution if it is found
             type(IntegrateManyBeams),intent(in)             ::      this
             real(kind=real64),dimension(0:),intent(out)     ::      I_g
+            logical,intent(in)                              ::      maxIntensity                !   if true and result not set, find maximum intensity inside foil, otherwise compute intensity at foil exit
 
             integer                     ::      ii,nG
             integer                     ::      ix,iy,nx,ny
@@ -638,7 +698,6 @@
             integer                     ::      mm
             real(kind=real64)           ::      phig2
             complex(kind=real64)        ::      phig
-            logical                     ::      maxIntensity = .false.      !   computing intensity at foil exit
 
 #ifdef MPI
             real(kind=real64),dimension(:),allocatable    ::      I_tmp
@@ -662,7 +721,8 @@
             end if
 
 
-            !print *,"Lib_IntegrateManyBeams::getIntensity0 info - rank ",rank," nx,ny,mx,my,nPrec ",nx,ny,mx,my,this%nPrec
+            !print *,"Lib_IntegrateManyBeams::getIntensity1 info - rank ",rank," nx,ny,mx,my,nPrec ",nx,ny,mx,my,this%nPrec
+            I_g = 0
             do jy = 0,my-1
                 do jx = 0,mx-1
 
@@ -693,10 +753,11 @@
             end do
 
 #ifdef MPI
-            allocate(I_tmp(0:nG))
-            I_tmp = I_g
-            call MPI_REDUCE( I_tmp,I_g,(nG+1),MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,ierror )
-            deallocate(I_tmp)
+            if (nprocs>1) then
+                allocate(I_tmp(0:nG))
+                I_tmp = I_g
+                call MPI_REDUCE( I_tmp,I_g,size(I_tmp),MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,ierror )
+            end if
 #endif        
 
             I_g = I_g / (nx*ny*this%nPrec)
@@ -737,7 +798,7 @@
                 call errorExit("selectFoilTilt error - could not find desired reflection in set")
             end if
 
-            print *,"selectFoilTilt ",bright
+            !print *,"selectFoilTilt ",hkl,bright," g-vector ",kk
         !---    select the orientation of the foil tilts
             call fibonacci_cap(RR(:,3,:),theta_max)            
             
@@ -770,7 +831,7 @@
                     bestq(rank) = qq
                     besti(rank) = ii                    
                 end if
-                write(*,fmt='(a,i6,100f12.6)') "selectFoilTilt ",ii,qq,RR(:,:,ii),Ik_R
+                !write(*,fmt='(a,i6,100f12.6)') "selectFoilTilt ",ii,qq,RR(:,:,ii),Ik_R
             end do
 
 #ifdef MPI
@@ -786,10 +847,10 @@
             end if
 #endif
 
-            if (rank==0) print *,"bestq ",bestq(rank)
+            !if (rank==0) print *,"bestq ",bestq(rank)
             bestRank = maxloc(bestq,dim=1)-1      !   which rank found the best quality?
             qq = bestq(bestRank)
-            if (rank == 0) print *,"besti ",qq,bestRank,besti(bestRank)
+            !if (rank == 0) print *,"besti ",qq,bestRank,besti(bestRank)
             ii = besti(bestRank)                  !   which trial was it?
             if (bestRank==rank) then
                 R(:,:) = RR(:,:,ii)
@@ -865,90 +926,86 @@
             complex(kind=real64),dimension(:,:,:),pointer   ::      dphidz
             
             integer,dimension(2,3)                          ::      bb
-            integer             ::      iz,rk_step
+            integer             ::      iz,rk_step,iz_layer
             integer             ::      mm
-            integer             ::      nx,ny,ng
+            integer             ::      nx,ny,nz,ng
             integer             ::      my_nx,my_ny
-            !integer             ::      ix,iy
             integer             ::      dz
-            !logical,dimension(:,:),allocatable              ::      mask
+            real(kind=real64)   ::      deltaz
+
+        !---    sanity test
+            if (.not. isFileRead(this)) call errorExit("integrate0 error - file read not complete")
+            if (.not. isAtomSpaceSet(this)) call errorExit("integrate0 error - AtomSpace not set")
+            if (.not. isGvectorsSet(this)) call errorExit("integrate0 error - g-vectors not set")
+            if (.not. isManyBeamSet(this)) call errorExit("integrate0 error - ManyBeam conditions not set")
+            if (.not. isCStructFactSet(this)) call errorExit("integrate0 error - structure factors not set")
+            if (.not. isImageSpaceSet(this)) call errorExit("integrate0 error - image space not set")
+
+
+            
+            !call computePhaseFields(this,0) 
+
 
         !---    allocate memory and temporaries needed for RK4 integration
             nx = getNx(this%is)
             ny = getNy(this%is)
+            nz = getNz(this%is)
             nG = getn(this%gv)
             call getBounds(this%is,bb)
             bb(1,:) = bb(1,:) - 1           !   buffer pixel
             bb(2,:) = bb(2,:) + 1           !   buffer pixel
             my_nx = bb(2,1)+1-bb(1,1)
             my_ny = bb(2,2)+1-bb(1,2)
-
-            integrator = RK4_ctor( n=(nG+1) * my_nx * my_ny, deltaz=2*geta(this%is) )     !   dz = 2a because the RK4 integrator needs to evaluate at half steps
+            
+            deltaz = 2*geta(this%is)                            !   dz = 2a because the RK4 integrator needs to evaluate at half steps
+            integrator = RK4_ctor( n=(nG+1) * my_nx * my_ny, deltaz=deltaz  )     
             if (rank==0) call report(integrator)
-            if (rank==0) print *,"Lib_IntegrateManyBeams::integrate0 info - bounds: nx,ny = ",nx,ny," lbx,ubx,lby,uby = ",bb(1:2,1),bb(1:2,2)," my_nx,my_ny = ",my_nx,my_ny
-            !if ( (bb(2,1)+1-bb(1,1)/=nx) .or. (bb(2,2)+1-bb(1,2)/=ny) ) then                
-            !    call errorExit("error")
-            !end if
+            if (rank==0) print *,"Lib_IntegrateManyBeams::integrate0 info - bounds: nx,ny,nz = ",nx,ny,nz," lbx,ubx,lby,uby = ",bb(1:2,1),bb(1:2,2)," my_nx,my_ny = ",my_nx,my_ny
 
-        !---    get pointers to current state and derivative
-            call getphip_dphip(integrator , rk_phip,rk_dphip)
-           ! print *,"a"
+        !---    get pointers to current state and derivative stored in the integrator
+            call getphip_dphip(integrator , rk_phip,rk_dphip)           
             allocate(dphidz(0:nG,bb(1,1):bb(2,1),bb(1,2):bb(2,2)))
-            !print *,"b"
+
+
+        !---    set boundary conditions at z=0
             dphidz = 0      
             rk_phip = 0
             rk_dphip = 0
-
-        !---    set boundary conditions at z=0
             do mm = 1,this%nPrec
                 this%slice(mm)%phi(0   ,:,:) = 1.0d0
                 this%slice(mm)%phi(1:nG,:,:) = 0.0d0
             end do
-            ! do mm = 1,this%nPrec
-            !     print *,"c ",mm,size(this%slice(mm)%phi,dim=1),size(this%slice(mm)%phi,dim=2),size(this%slice(mm)%phi,dim=3)
-            ! end do
-            !allocate(mask())
-
-!            rk_phip = pack(this%phi,.true.)
-             
 
             
         !---    integrate!   
             do iz = 0,getNz(this%is)-3,2
-                if (rank == 0) call progressBar(iz/2+1,(getNz(this%is)-1)/2)
+                !if (rank == 0) call progressBar(iz/2+1,(getNz(this%is)-1)/2)
+
+                if (mod(iz,this%zlayers)==0) then
+                    iz_layer = iz
+                    call computePhaseFields(this,iz_layer) 
+                end if
+
+
                 do mm = 1,this%nPrec
-                    !print *,"d",iz,mm
-                    ! print *,"size(rk_phip) ",size(rk_phip),(nG+1) * my_nx * my_ny,size(this%slice(mm)%phi)
+
                     rk_phip = pack(this%slice(mm)%phi,.true.)
-                    !print *,"e"
                     call update(integrator)
-                    !print *,"f"
                     dz = 0
                     do rk_step = 1,4
-                        ! print *,"integrate0 slice ",rank
                     !   ensure that phi is distributed correctly 
-                        this%slice(mm)%phi(:,bb(1,1):bb(2,1),bb(1,2):bb(2,2)) = reshape( rk_phip, (/nG+1,my_nx,my_ny/) )
-                        ! print *,"integrate0 sendrecv ",rank
-                        if (.not. this%columnar) call sendrecv( this%is,this%slice(mm)%phi )
-                        ! print *,"integrate0 sendrecv done ",rank
+                        this%slice(mm)%phi(0:nG,bb(1,1):bb(2,1),bb(1,2):bb(2,2)) = reshape( rk_phip, (/nG+1,my_nx,my_ny/) )
                     !   compute dphidz
-                        ! print *,"integrate0 sendrecv ",rank," ass ",associated(this%slice(mm)%phi),associated(dphidz)
-                        call finddPhidz( this%mb(mm) , this%slice(mm)%phi , iz+dz, dphidz, this%columnar )
+                        call finddPhidz( this%mb(mm) , this%slice(mm)%phi , iz-iz_layer+dz, dphidz, this%columnar )
                         rk_dphip = pack(dphidz,.true.)
-                                            
-                        ! print *,"integrate0 update ",rank
                     !   update accumulators in RK4
                         call update(integrator,rk_step,dz)
                        
                     end do
-
-                    !if (iz == getNz(this%is)-2) then
-                        !---    extract result
-                        this%slice(mm)%phi(0:nG,bb(1,1):bb(2,1),bb(1,2):bb(2,2)) = reshape( rk_phip, (/nG+1,my_nx,my_ny/) )
-                    !end if
+                    this%slice(mm)%phi(0:nG,bb(1,1):bb(2,1),bb(1,2):bb(2,2)) = reshape( rk_phip, (/nG+1,my_nx,my_ny/) )
+                    if (.not. this%columnar) call sendrecv( this%is,this%slice(mm)%phi )
 
                 end do
-
 
             end do
             call setSimResultSet(this,.true.)
@@ -969,35 +1026,51 @@
             type(IntegrateManyBeams),intent(inout)          ::      this
             integer(kind=SELECTION_RULE),intent(in)         ::      rule
             real(kind=real64),intent(in),optional           ::      rho_in          !   compute all g-vectors within given radius
-            integer,dimension(3),intent(in),optional        ::      hkl_in          !   compute a single reflection
+            integer,dimension(:,:),intent(in),optional      ::      hkl_in          !   compute sepcified reflections
 
             real(kind=real64),dimension(3,3)        ::      a_conventional_cell
             integer                                 ::      nn
             integer,dimension(:,:),allocatable      ::      hkl,hjkl
             logical,dimension(:),allocatable        ::      keep
             integer,dimension(3)                    ::      hkl_swp
-            !real(kind=real64)                       ::      sg
             real(kind=real64),dimension(3)          ::      kk,gg
             integer                                 ::      ii,jj
             logical                 ::      done
 
+
+
             if (rank==0) then
+                print *,"Lib_IntegrateManyBeams::setGvectors info - previous g-vectors ",isGvectorsSet(this)
+                print *,"Lib_IntegrateManyBeams::setGvectors info - deformation gradient"
+                write (*,fmt='(3f16.8)') this%dfg_bar(1,:)
+                write (*,fmt='(3f16.8)') this%dfg_bar(2,:)
+                write (*,fmt='(3f16.8)') this%dfg_bar(3,:)
                 if (present(rho_in)) then
                     print *,"Lib_IntegrateManyBeams::setGvectors info - many beam mode, radius |[hkl]|<=",rho_in
                 else if (present(hkl_in)) then
-                    print *,"Lib_IntegrateManyBeams::setGvectors info - two beam mode, hkl = ",hkl_in
+                    print *,"Lib_IntegrateManyBeams::setGvectors info - selecting [000] + additional ",size(hkl_in,dim=2)," beams"
                 end if
             end if
+
+            
+
 
 
             if (present(rho_in)) then
             !---    find all reflections within certain radius
                 call permittedReflections( this%latt,nn,hkl,rho_in )            
             else if (present(hkl_in)) then
-                nn = 2
+                nn = size(hkl_in,dim=2) + 1
                 allocate(hkl(3,nn))
                 hkl(:,1) = 0
-                hkl(:,2) = hkl_in(:)
+
+                if (size(hkl_in,dim=1)==3) then
+                    hkl(:,2:) = hkl_in(:,1:)
+                else
+                    do ii = 1,size(hkl_in,dim=2)
+                        hkl(:,ii+1) = MillerBravaisToMiller_plane( hkl_in(:,ii) )
+                    end do
+                end if
             end if
 
         !---    find the transmitted beam vector
@@ -1014,7 +1087,7 @@
         !---    check which reflections we will keep 
 
             allocate(keep(nn))
-            this%gv = Gvectors_ctor(a_conventional_cell,hkl(:,2:nn))        !   make a temporary set of g-vectors, so that we can test for Laue zones
+            this%gv = Gvectors_ctor( a_conventional_cell,hkl(:,2:nn) )        !   make a temporary set of g-vectors, so that we can test for Laue zones
             do ii = 1,nn                
                 gg = getg( a_conventional_cell,hkl(:,ii) )
                 keep(ii) = keepGvector( this,gg,rule )
@@ -1024,11 +1097,14 @@
                 if (keep(ii)) then
                     jj = jj + 1
                     hkl(:,jj) = hkl(:,ii)
+                !else
+                !    print *,"rejecting ",hkl(:,ii),deviationParameter( (/0,0,1/) * ME * velocity( this%V ) / HBAR , getg( a_conventional_cell,hkl(:,ii) ) )
                 end if
+                
             end do
             call delete(this%gv)                                            !   delete the temporary set of g-vectors.
             nn = count(keep)
-            print *,"keeping ",nn,"/",size(keep)
+            if (rank==0) print *,"Lib_IntegrateManyBeams::setGvectors info -keeping ",nn,"/",size(keep)
             
  
         !---    bubble sort permitted reflections
@@ -1058,10 +1134,13 @@
                 this%gv = Gvectors_ctor(a_conventional_cell,hkl(:,2:nn))
             end if
  
-            call report(this%gv)
+            if (rank==0) call report(this%gv)
             if (rank==0) print *,""
+            call setGvectorsSet(this,.true.)
             return
         end subroutine setGvectors
+
+
  
         logical function keepGvector( this,gg,rule )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1077,8 +1156,10 @@
             real(kind=real64),save                  ::      alpha = 0.0d0
             integer                                 ::      ii
             integer                                 ::      closest_g_to_001
-            real(kind=real64)                       ::      dd,dmax
+            real(kind=real64)                       ::      dd,dmax,modk
             
+            
+
             select case(rule)
 
                 case (LIB_IMB_BLOCK_HIGH_SG)
@@ -1096,10 +1177,13 @@
                         closest_g_to_001 = LIB_GVECTORS_UNSET
                         do ii = 1,getn(this%gv)
                             kk = getg(this%gv,ii)       !   find a g-vector ...
-                            dd = kk(3) / norm2(kk)      !   ... find its normalisd projection on [001] direction
-                            if (dd > dmax) then         !   this is closest to z-direction
-                                dmax = dd
-                                closest_g_to_001 = ii
+                            modk = norm2(kk)
+                            if (modk>0) then
+                                dd = kk(3) / modk           !   ... find its normalisd projection on [001] direction
+                                if (dd > dmax) then         !   this is closest to z-direction
+                                    dmax = dd
+                                    closest_g_to_001 = ii
+                                end if
                             end if
                         end do
                         if (closest_g_to_001 /= LIB_GVECTORS_UNSET) then
@@ -1151,6 +1235,7 @@
             real(kind=real64)                   ::      weight
             integer,dimension(:),pointer        ::      tt
             integer                             ::      mostPopType,nTypeMax
+             
 
             if (rank==0) print *,"Lib_IntegrateManyBeams::readInputXyzFile info"
 
@@ -1165,12 +1250,14 @@
             if (rank == 0) then    
                 xyz = XYZFile_ctor(filename)
                 call readHeader(xyz,ok)
+ 
+
                 if (ok) then
                     call input(xyz,verbose=.true.)
                     call report(xyz)        
                     this%nAtoms = getNAtoms(xyz) 
                     call getColumnsp(xyz,this%r)
-                    this%r = this%r + 1.0d-8
+                    this%r = this%r + 1.0e-8
                     call getSupercell(xyz,a_super,ok) 
                     if (.not. ok) print *,"Lib_IntegrateManyBeams::readInputXyzFile error - could not read supercell information"
                     if (getNColumns(xyz)>=13) then
@@ -1253,7 +1340,7 @@
             call MPI_BCAST(this%nAtoms,1,MPI_INTEGER,0,MPI_COMM_WORLD,ii)
             call MPI_BCAST(this%element,XYZFILE_ATOMNAMELENGTH,MPI_CHARACTER,0,MPI_COMM_WORLD,ii)
             if (rank/=0) allocate(this%r(3,this%nAtoms))
-            call MPI_BCAST(this%r(1:3,1:this%nAtoms),3*this%nAtoms,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ii)                
+            call MPI_BCAST(this%r(1:3,1:this%nAtoms),3*this%nAtoms,MPI_REAL,0,MPI_COMM_WORLD,ii)                
             call MPI_BCAST(a_super,9,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ii)
             call MPI_BCAST(xyz_offset,3,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ii)
             call MPI_BCAST(this%dfg_bar,9,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ii)
@@ -1271,9 +1358,10 @@
 
 
         subroutine setImagingSpace(this)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
     !*      once the g-vectors and the atom space have been determined, can set the imaging space
     !*      We can also make transformation on the atom positions, and store all the periodic copies I need.
+    !*      will also allocate memory for the solution.
 
             type(IntegrateManyBeams),intent(inout)          ::      this
         !    real(kind=real64),intent(in)                    ::      sigma
@@ -1281,13 +1369,16 @@
             real(kind=real64)   ::      theta           !   max angle required for beam dispersion
             integer             ::      ii,jj,mm
             integer             ::      nG
-            real(kind=real64),dimension(:,:),pointer        ::      rt_tmp
+            real(kind=real32),dimension(:,:),pointer        ::      rt_tmp
             real(kind=real64),dimension(3,9)                ::      xtp
             integer                                         ::      np
             integer                                         ::      mynAtoms
             integer,dimension(2,3)                          ::      bounds
-            if (rank==0) print *,"Lib_IntegrateManyBeams::setImagingSpace"
+           ! if (rank==0) print *,"Lib_IntegrateManyBeams::setImagingSpace"
 
+            if ( isImageSpaceSet(this) ) call errorExit( "setImagingSpace error - duplicate call image space set already.")
+
+        !---    find the maximum divergence angle for the beams used            
             theta = 0
             do mm = 1,this%nPrec
                 do ii = 1,getn(this%gv)
@@ -1297,10 +1388,10 @@
             end do
             
             call suggestImagingSpace(this%as,Nx,Ny,Nz,theta)
-            if (rank==0) print *,"Lib_IntegrateManyBeams::setImagingSpace info - theta = ",theta," Nx,Ny,Nz = ",Nx,Ny,Nz
-            call setDelta(this%as,Nx,Ny,Nz)
+           ! if (rank==0) print *,"Lib_IntegrateManyBeams::setImagingSpace info - theta = ",theta," Nx,Ny,Nz = ",Nx,Ny,Nz
+            call setDelta(this%as,Nx,Ny,Nz)             !   can't know the offset until the imaging space is known.
 
-            this%is = ImagingSpace_ctor( geta(this),getSigma(this), getdelta(this%as),Nx,Ny,Nz)
+            this%is = ImagingSpace_ctor( geta(this),getSigma(this), getdelta(this%as),Nx,Ny,Nz )
             if (rank==0) call report(this%is) 
              
 
@@ -1322,12 +1413,12 @@
                 do jj = 1,np
                     if (inMyCell(this%is,xtp(:,jj),buffered=.true.)) then
                         mynAtoms = mynAtoms + 1
-                        rt_tmp(1:3,mynAtoms) = xtp(1:3,jj)
+                        rt_tmp(1:3,mynAtoms) = real( xtp(1:3,jj),kind=real32 )
                     end if
                 end do
             end do
 
-            deallocate(this%r)
+            deallocate(this%r)                                  !   note that this deallocates the memory read in from the .xyz file
             this%nAtoms = mynAtoms
             this%r => rt_tmp
             if (rank==0) print *,""
@@ -1341,78 +1432,142 @@
                 allocate(this%slice(mm)%phi(0:nG,bounds(1,1)-1:bounds(2,1)+1,bounds(1,2)-1:bounds(2,2)+1))
                 this%slice(mm)%phi = 0
             end do            
-            if (rank==0) print *,"setImagingSpace info - memory for Phi_g(r) ", size(this%slice(1)%phi)*16.0*this%nPrec/(1024*1024)," (Mb)"
+            if (rank==0) print *,"Lib_IntegrateManyBeams::setImagingSpace info - memory for Phi_g(r) ", size(this%slice(1)%phi)*16.0*this%nPrec/(1024*1024)," (Mb)"
 
             call setImageSpaceSet(this,.true.)
             return
         end subroutine setImagingSpace
 
 
-        subroutine computePhaseFields(this)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        subroutine computePhaseFields(this , iz)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      once the imaging space is set, I can compute the phase factors in my region
-    !*      note that this subroutine does a lot of the big memory allocations
+     
             type(IntegrateManyBeams),intent(inout)          ::      this
-            integer,dimension(2,3)          ::      bb
-            integer                         ::      nG
-            real(kind=real64),dimension(:,:),allocatable        ::      gg          !   (3,nG)      g-vectors
-            !integer,dimension(:),allocatable        ::      gindx
-            integer                                 ::      ii,mm,nGcalc
-             
-            real                            ::      mem
+            integer,intent(in)                              ::      iz              !   compute and store rho, grad_arg_x for iz:iz+zlayers-1
 
-            if (rank==0) print *,"Lib_IntegrateManyBeams::computePhaseFields"
+            integer,dimension(2,3)                          ::      bb              !   bounds of imaging space
+            integer                                         ::      nG              !   number of g-vectors in many beams, not equal to number of phase fields computed
+            integer                                         ::      ii,mm ,jx,jy,jz
+            integer                                         ::      iz_high
+            real(kind=real64)                               ::      mingrad_arg_x,maxgrad_arg_x,sumgrad_arg_x,modgrad_arg_x
+            real                                            ::      nvox
 
-            call getBounds(this%is,bb)
-            nG = getn(this%gv)
-            allocate(this%rho   (     bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))        
-            mem = (bb(2,1)+1-bb(1,1))*(bb(2,2)+1-bb(1,2)) 
+        !---    static variables which I don't need to compute every time
+            logical,save                                        ::      firstCall = .true.
+            integer,save                                        ::      nGcalc 
+            real(kind=real64),dimension(:,:),allocatable,save   ::      gg          !   (3,nG)      g-vectors
 
-            if (rank==0) then
-                print *,"Lib_IntegrateManyBeams::computePhaseFields info - memory for x,rho ", (4*nG+0.5)*mem*16.0/(1024*1024)," Mb"
-                print *,"Lib_IntegrateManyBeams::computePhaseFields info - bb = ",bb," nG = ",nG
+
+
+            if (rank==0) print *,"Lib_IntegrateManyBeams::computePhaseFields info - zlayer         ",iz,":",iz+this%zlayers-1," (+2)"
+
+        !---    size of problem                        
+            call getBounds(this%is,bb)             
+            nG = getn(this%gv)           
+            nvox = real(bb(2,1)+1-bb(1,1))*real(bb(2,2)+1-bb(1,2))*(this%zlayers + 2)               !   note: need to compute zlayers + 2 for rk4 to work
+
+
+        !---    allocate memory for a z-slice of rho            
+            if (firstCall) then
+                if (rank==0) then
+                    print *,"Lib_IntegrateManyBeams::computePhaseFields info - z bounds       ",bb(1,3),":",bb(2,3)
+                    !print *,"Lib_IntegrateManyBeams::computePhaseFields info - computing      ",iz,":",iz+this%zlayers-1
+                    print *,"Lib_IntegrateManyBeams::computePhaseFields info - memory for rho ", nvox*4.0/(1024.0*1024.0)," Mb"
+                    !print *,"Lib_IntegrateManyBeams::computePhaseFields info - bb = ",bb," nG = ",nG
+                end if
+                allocate(this%rho( bb(1,1):bb(2,1),bb(1,2):bb(2,2),0:this%zlayers+1 ))                    
             end if
-
 
         !---    we don't need to compute phase factors for all the g-vectors.
         !       g=0 gives a constant, x(g=0) = exp[ -i g.u ] = 1
         !       and x(-g) =  exp[ -i (-g).u ] = x(g)*
-            nGcalc = nPositiveg(this%gv)
-            allocate(gg(3,nGcalc))
+            if (firstCall) then
+                nGcalc = nPositiveg(this%gv)
+                allocate(gg(3,nGcalc))
 
-            nGcalc = 0
-            do ii = 1,nG
-                if (isPositiveg(this%gv,ii)) then
-                    nGcalc = nGcalc + 1
-                    gg(:,nGcalc) = getG(this%gv,ii)
-                    if (rank==0) write(*,fmt='(3(a,3f10.5))') " Lib_IntegrateManyBeams::computePhaseFields info - calculating x_(g=",getG(this%gv,ii),")"
-                else
-                    !   already have computed -g, so don't need to compute g
-                    if (rank==0) write(*,fmt='(3(a,3f10.5))') " Lib_IntegrateManyBeams::computePhaseFields info - skipping calculation of x_(g=",getG(this%gv,ii),") = x*_(g=",getG(this%gv,getMinusg(this%gv,ii)),")"
-                end if                
-            end do
+                nGcalc = 0
+                nG = getn(this%gv)
+                do ii = 1,nG
+                    if (isPositiveg(this%gv,ii)) then
+                        nGcalc = nGcalc + 1
+                        gg(:,nGcalc) = getG(this%gv,ii)
+                        if ((rank==0).and.LIB_IMB_DBG) print *,"Lib_IntegrateManyBeams::computePhaseFields info - compute grad_arg_x ",nGcalc," g-vec ",ii,gg(:,nGcalc)
+                    else
+                        !   already have computed -g, so don't need to compute +g
+                    end if                
+                end do
+            end if
+            
+        !---    allocate memory for a z-slice of grad_arg_x
+            if (firstCall) then
+                if (rank==0) then
+                    print *,"Lib_IntegrateManyBeams::computePhaseFields info - memory for grad_arg_x ", (3*nGcalc)*nvox*8.0/(1024.0*1024.0)," Mb"
+                end if
+                allocate(this%grad_arg_x(3,nGcalc,bb(1,1):bb(2,1),bb(1,2):bb(2,2),0:this%zlayers+1))        !   note: 
+            end if
 
-            allocate(this%grad_arg_x(3,nGcalc,bb(1,1):bb(2,1),bb(1,2):bb(2,2),bb(1,3):bb(2,3)))
 
-            call computePhaseFactor( this%nAtoms,this%r,gg, this%is, getDelta(this%as), this%grad_arg_x,this%rho )
-
-            this%rho = this%rho/geta(this)**3
-            if (rank==0) print *,"Lib_IntegrateManyBeams::computePhaseFields info - minmaxavg rho      ",minval(abs(this%rho)),maxval(abs(this%rho)),sum(abs(this%rho))/(size(this%rho))," (1/A^3) "
-            this%rho = densityScale( this%rho, this%omega0 )
+        !---    compute the phase factor for my z-slice            
+            iz_high = min( getnz(this%is) , iz + this%zlayers + 1 )
+            call computePhaseFactor( this%nAtoms,this%r,gg, this%is, getDelta(this%as),iz, iz_high, this%grad_arg_x,this%rho )
+            this%rho = real( this%rho/geta(this)**3 , kind=real32 )
+            !if ((rank==0).and.LIB_IMB_DBG) print *,"Lib_IntegrateManyBeams::computePhaseFields info - minmaxavg rho      ",minval(abs(this%rho)),maxval(abs(this%rho)),sum(abs(this%rho))/(size(this%rho))," (1/A^3) "
+            this%rho = densityScale( this%rho, real(this%omega0,kind=real32 ) )
             if (rank==0) print *,"Lib_IntegrateManyBeams::computePhaseFields info - minmaxavg rho'     ",minval(abs(this%rho)),maxval(abs(this%rho)),sum(abs(this%rho))/(size(this%rho))
+
+
+        !---    dump of atom positions and z-slice
+            if ((rank==0).and.LIB_IMB_DBG) then                
+                open(unit=500,file="test.xyz",action="write")
+                    write(unit=500,fmt='(i8)') this%nAtoms + (bb(2,1)+1-bb(1,1))*(bb(2,2)+1-bb(1,2))*this%zlayers
+                    write(unit=500,fmt='(a,9f12.6,a)') "Lattice=""",getA_super(this%as),""" Properties=Species:S:1:Pos:R:3:rho:R:1:GradArgX:R:3"
+                    do ii = 1,this%nAtoms
+                        write(unit=500,fmt='(a,10f16.8)') this%element,fromImagingSpace( this%as,this%r(:,ii) ),0.0d0,0.0d0,0.0d0,0.0d0
+                    end do
+                    do jz = 0,this%zlayers-1
+                        do jy = bb(1,2),bb(2,2)
+                            do jx = bb(1,1),bb(2,1)
+                                write(unit=500,fmt='(a,10f16.6)') "g",fromImagingSpace( this%as,(/jx,jy,iz+jz/) ),this%rho(jx,jy,jz),this%grad_arg_x(:,1,jx,jy,jz)
+                            end do
+                        end do
+                    end do                    
+                close(unit=500)
+            end if
+
 
         !---    unpack the computed g-vectors
 
-
-
-
-            if (rank==0) print *,"Lib_IntegrateManyBeams::computePhaseFields info - minmaxavg |grad_arg_x| ",minval(abs(this%grad_arg_x)),maxval(abs(this%grad_arg_x)),sum(abs(this%grad_arg_x))/(size(this%grad_arg_x))
+           if ((rank==0).and.LIB_IMB_DBG) then
+                do ii = 1,nGcalc
+                    mingrad_arg_x = huge(1.0)
+                    maxgrad_arg_x = -huge(1.0)
+                    sumgrad_arg_x = 0
+                    do jz = lbound(this%grad_arg_x,dim=5),ubound(this%grad_arg_x,dim=5)
+                        do jy = lbound(this%grad_arg_x,dim=4),ubound(this%grad_arg_x,dim=4)
+                            do jx = lbound(this%grad_arg_x,dim=3),ubound(this%grad_arg_x,dim=3)
+                                modgrad_arg_x = norm2( this%grad_arg_x(:,ii,jx,jy,jz ))
+                                mingrad_arg_x = min( mingrad_arg_x,modgrad_arg_x )
+                                maxgrad_arg_x = max( maxgrad_arg_x,modgrad_arg_x )
+                                sumgrad_arg_x = sumgrad_arg_x + modgrad_arg_x
+                                !if ( (ii==4).and.(modgrad_arg_x==0) ) print *,"zero? ",ii,jx,jy,jz,this%grad_arg_x(:,ii,jx,jy,jz ),this%rho(jx,jy,jz)
+                            end do
+                        end do
+                    end do
+                    
+                    print *,"Lib_IntegrateManyBeams::computePhaseFields info - minmaxavg |grad_arg_x(",ii,")| ",mingrad_arg_x,maxgrad_arg_x,sumgrad_arg_x/nvox
+                end do
+            end if
             
+
+        !---    set the phase factors for my z-slice           
             do mm = 1,this%nPrec
-                call setPhaseFactors( this%mb(mm),geta(this), this%grad_arg_x,this%rho )
+                call setPhaseFactors( this%mb(mm),iz,iz + this%zlayers - 1, this%grad_arg_x,this%rho )
             end do
             
-            call setPhaseFieldSet(this,.true.)
+
+            firstCall = .false.
+            !call setPhaseFieldSet(this,.true.)
             return
         end subroutine computePhaseFields
 
@@ -1421,7 +1576,7 @@
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      returns width of blurring used to construct phase fields
             type(IntegrateManyBeams),intent(in)           ::      this            
-            getSigma0 = this%a0/2
+            getSigma0 = this%a0/this%M
             return
         end function getSigma0
 
@@ -1429,7 +1584,7 @@
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      returns pixel size
             type(IntegrateManyBeams),intent(in)           ::      this            
-            getA0 = this%a0/4
+            getA0 = this%a0/this%M
             return
         end function getA0
  
@@ -1444,7 +1599,6 @@
 
             sanityCheck0 = (getn(this%gv)>0)
 
-            !sanityCheck0 = sanityCheck0 .and. associated(this%x)
             sanityCheck0 = sanityCheck0 .and. associated(this%grad_arg_x)
             sanityCheck0 = sanityCheck0 .and. associated(this%rho)
 
@@ -1553,21 +1707,21 @@
             return
         end function isImageSpaceSet
 
-        pure subroutine setPhaseFieldSet(this,is)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            type(IntegrateManyBeams),intent(inout)      ::      this          
-            logical,intent(in)                          ::      is
-            this%status = this%status - iand(this%status,LIB_IMB_PHASEFIELD_SET)
-            if (is) this%status = this%status + LIB_IMB_PHASEFIELD_SET 
-            return
-        end subroutine setPhaseFieldSet
+    !     pure subroutine setPhaseFieldSet(this,is)
+    ! !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !         type(IntegrateManyBeams),intent(inout)      ::      this          
+    !         logical,intent(in)                          ::      is
+    !         this%status = this%status - iand(this%status,LIB_IMB_PHASEFIELD_SET)
+    !         if (is) this%status = this%status + LIB_IMB_PHASEFIELD_SET 
+    !         return
+    !     end subroutine setPhaseFieldSet
 
-        pure logical function isPhaseFieldSet(this)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            type(IntegrateManyBeams),intent(in)         ::      this            
-            isPhaseFieldSet = iand(this%status,LIB_IMB_PHASEFIELD_SET) == LIB_IMB_PHASEFIELD_SET
-            return
-        end function isPhaseFieldSet
+    !     pure logical function isPhaseFieldSet(this)
+    ! !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !         type(IntegrateManyBeams),intent(in)         ::      this            
+    !         isPhaseFieldSet = iand(this%status,LIB_IMB_PHASEFIELD_SET) == LIB_IMB_PHASEFIELD_SET
+    !         return
+    !     end function isPhaseFieldSet
 
         pure subroutine setSimResultSet(this,is)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1602,6 +1756,7 @@
 #endif            
             call Lib_AtomSpace_init_MPI()
             call Lib_ImagingSpace_init_MPI()
+            call Lib_ComputePhaseFactor_init_MPI()
             return
         end subroutine Lib_IntegrateManyBeams_init_MPI
 

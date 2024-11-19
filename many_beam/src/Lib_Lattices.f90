@@ -777,7 +777,7 @@
 
 
         subroutine permittedReflections( this,n,hkl,rho_in )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      return the permitted reflections [hkl]
     !*      such that (h)^2 + (k)^2 + (l)^2 <= rho^2
     !*      given the lattice type
