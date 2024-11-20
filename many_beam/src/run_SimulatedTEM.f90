@@ -412,7 +412,7 @@
                 write(*,fmt='(a,3f10.6)') " run_SimulatedTEM info - minmaxavg img ",minval(img),maxval(img),sum(img)/(Nx*Ny)
 
 
-                if ((rank==0).and. pngBlur) call blurImg( img, 2/getA( imb ) )
+                if ((rank==0).and. pngBlur) call blurImg( img, getSigma( imb )/getA( imb ) )
  
 
 

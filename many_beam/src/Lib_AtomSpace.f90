@@ -285,7 +285,7 @@
 
         subroutine suggestImagingSpace(this,Nx,Ny,Nz,theta)
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !*      suggest a size for the imaging space which covers all the atoms + one extra cell in the x-y directions
+    !*      suggest a size for the imaging space which covers all the atoms 
     !*      optionally add a divergence angle 
 
             type(AtomSpace),intent(in)                  ::      this
@@ -348,28 +348,19 @@
                 ix = -dNxy   ; iy = Ny+dNxy ; minx = min( minx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 )
                 ix = Nx+dNxy ; iy = Ny+dNxy ; minx = min( minx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - Rn(1)*ix - Rn(2)*iy )*in3 )
 
-                ! ix = -dNxy   ; iy = -dNxy   ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ! ix = Nx+dNxy ; iy = -dNxy   ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ! ix = -dNxy   ; iy = Ny+dNxy ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ! ix = Nx+dNxy ; iy = Ny+dNxy ; minx = min( minx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d1 - this%n(1)*ix - this%n(2)*iy )*in3 )
-
-                ! ix = -dNxy   ; iy = -dNxy   ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ! ix = Nx+dNxy ; iy = -dNxy   ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ! ix = -dNxy   ; iy = Ny+dNxy ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
-                ! ix = Nx+dNxy ; iy = Ny+dNxy ; minx = min( minx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 ) ; maxx = max( maxx, (d2 - this%n(1)*ix - this%n(2)*iy )*in3 )
-
                 Nz = ceiling( maxx - minx )  
                 ii = ceiling( Nz * tantheta )
                 if (ii>dNxy) then                    
                     dNxy = ii
-                    if ((rank==0).and. present(theta)) write (*,fmt='(a,f10.4,6(a,i4))') " Lib_AtomSpace::suggestImagingSpace info - dispersion angle ",theta," (rad). Pad image space from ",Nx,",",Ny,",",Nz," to ",Nx+2*dNxy,",",Ny+2*dNxy,",",Nz
+                    if ((rank==0).and. present(theta)) write (*,fmt='(a,f10.4,6(a,i4))') " Lib_AtomSpace::suggestImagingSpace info - dispersion angle ",theta*180/3.141592654d0,    &
+                            " (deg). Pad image space from ",Nx,",",Ny,",",Nz," to ",Nx+2*dNxy,",",Ny+2*dNxy,",",Nz
                 else
                     exit
                 end if
                     
             end do
-            Nx = Nx + 2*dNxy + 2        !   +2*dNxy is the divergence angle, +2 is a buffer of +1 cell for parallelization optimisation
-            Ny = Ny + 2*dNxy + 2
+            Nx = Nx + 2*dNxy         !   +2*dNxy is padding for the divergence angle on either side
+            Ny = Ny + 2*dNxy 
 
             return
         end subroutine suggestImagingSpace
@@ -418,7 +409,7 @@
             real(kind=real32),dimension(3),intent(in)   ::      x
             integer,intent(out)                         ::      np
             real(kind=real64),dimension(:,:),intent(inout)  ::      xtp             !   (3,9)
-            call periodicCopies0(this,x,getNx(img),getNy(img),getnBuf(img),np,xtp)
+            call periodicCopies0(this,x,getNx(img),getNy(img),getnBuf(img)+1,np,xtp)
             return
         end subroutine periodicCopies1
 

@@ -175,7 +175,7 @@
                 ix = floor( rt(1,ii) ) 
                 iy = floor( rt(2,ii) ) 
                 iz = floor( rt(3,ii) ) 
-                if ( inBufferedBounds(ix,iy,iz) ) then
+                if ( inAtomBounds(ix,iy,iz) ) then
                     nInBufferedBounds = nInBufferedBounds + 1
                 else
                     cycle
@@ -231,49 +231,48 @@
                     jx = ix + dx_kernel(1,kk)
                     jy = iy + dx_kernel(2,kk)
                     jz = iz + dx_kernel(3,kk)  
-                    if (inBounds(jx,jy,jz)) then
-                        rho(jx,jy,jz-lbz) = rho(jx,jy,jz-lbz) + rho_weight(kk) * d0                             
-                        xx(1:nGvec,jx,jy,jz-lbz) = xx(1:nGvec,jx,jy,jz-lbz) + x_weight(1:nGvec,kk) * d0                
-                    end if
+                    if (inBounds(jx,jy,jz)) rho(jx,jy,jz-lbz) = rho(jx,jy,jz-lbz) + rho_weight(kk) * d0                             
+                    if (inxBounds(jx,jy,jz)) xx(1:nGvec,jx,jy,jz-lbz) = xx(1:nGvec,jx,jy,jz-lbz) + x_weight(1:nGvec,kk) * d0                
+                    
                 end do
 
             end do
  
 
 
-         !---    add the padding around the x stored region by extrapolating the derivative(s)    
-            do jy = lby,uby
-                do jx = lbx,ubx
-                    xx(:,jx,jy,-1) =  3*xx(:,jx,jy,0) - 3*xx(:,jx,jy,+1) + xx(:,jx,jy,+2)               !   best fit to x(-1) given x(0),x(1),x(2) 
-                end do
-            end do
-            do jy = lby,uby
-                do jx = lbx,ubx
-                    xx(:,jx,jy,ubz-lbz+1) =  xx(:,jx,jy,ubz-lbz-2) - 3*xx(:,jx,jy,ubz-lbz-1) + 3*xx(:,jx,jy,ubz-lbz) 
-                end do
-            end do
+        !  !---    add the padding around the x stored region by extrapolating the derivative(s)    
+        !     do jy = lby-1,uby+1
+        !         do jx = lbx-1,ubx+1
+        !             xx(:,jx,jy,-2) =  3*xx(:,jx,jy,-1) - 3*xx(:,jx,jy,0) + xx(:,jx,jy,+1)               !   best fit to x(-1) given x(0),x(1),x(2) 
+        !         end do
+        !     end do
+        !     do jy = lby-1,uby+1
+        !         do jx = lbx-1,ubx+1
+        !             xx(:,jx,jy,ubz-lbz+2) =  xx(:,jx,jy,ubz-lbz-1) - 3*xx(:,jx,jy,ubz-lbz) + 3*xx(:,jx,jy,ubz-lbz+1) 
+        !         end do
+        !     end do
 
-            do jz = -1,ubz+1-lbz
-                do jx = lbx,ubx
-                    xx(:,jx,lby-1,jz) =  3*xx(:,jx,lby,jz) - 3*xx(:,jx,lby+1,jz) + xx(:,jx,lby+2,jz)
-                end do
-            end do
-            do jz = -1,ubz+1-lbz
-                do jx = lbx,ubx
-                    xx(:,jx,uby+1,jz) =  xx(:,jx,uby-2,jz) - 3*xx(:,jx,uby-1,jz) + 3*xx(:,jx,uby,jz) 
-                end do
-            end do
+        !     do jz = -2,ubz+2-lbz
+        !         do jx = lbx-1,ubx-1
+        !             xx(:,jx,lby-2,jz) =  3*xx(:,jx,lby-1,jz) - 3*xx(:,jx,lby,jz) + xx(:,jx,lby+1,jz)
+        !         end do
+        !     end do
+        !     do jz = -2,ubz+2-lbz
+        !         do jx = lbx-1,ubx-1
+        !             xx(:,jx,uby+2,jz) =  xx(:,jx,uby-1,jz) - 3*xx(:,jx,uby,jz) + 3*xx(:,jx,uby+1,jz) 
+        !         end do
+        !     end do
 
-            do jz = -1,ubz+1-lbz
-                do jy = lby-1,uby+1
-                    xx(:,lbx-1,jy,jz) =  3*xx(:,lbx,jy,jz) - 3*xx(:,lbx+1,jy,jz) + xx(:,lbx+2,jy,jz)
-                end do
-            end do
-            do jz = -1,ubz+1-lbz
-                do jy = lby-1,uby+1
-                    xx(:,ubx+1,jy,jz) =  xx(:,ubx-2,jy,jz) - 3*xx(:,ubx-1,jy,jz) + 3*xx(:,ubx,jy,jz) 
-                end do
-            end do
+        !     do jz = -2,ubz+2-lbz
+        !         do jy = lby-2,uby+2
+        !             xx(:,lbx-2,jy,jz) =  3*xx(:,lbx-1,jy,jz) - 3*xx(:,lbx,jy,jz) + xx(:,lbx+1,jy,jz)
+        !         end do
+        !     end do
+        !     do jz = -2,ubz+2-lbz
+        !         do jy = lby-2,uby+2
+        !             xx(:,ubx+2,jy,jz) =  xx(:,ubx-1,jy,jz) - 3*xx(:,ubx,jy,jz) + 3*xx(:,ubx+1,jy,jz) 
+        !         end do
+        !     end do
 
        !---    ensure x is phase factor ( should have |x|=1 )
              do jz = -1,ubz+1-lbz
@@ -334,7 +333,7 @@
             
             deallocate(xx)
            
-             
+            !grad_arg_x = grad_arg_x * 1.5
             return
 
         contains
@@ -351,15 +350,25 @@
             end function inBounds
 
 
-            pure logical function inBufferedBounds(jx,jy,jz)
+            pure logical function inxBounds(jx,jy,jz)
         !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         !*      is the node (jx,jy,jz) in bounds of the array x(:,:,:,:) + buffer
                 integer,intent(in)          ::      jx,jy,jz
-                inBufferedBounds = (jx>=lbx-nBuf).and.(jx<=ubx+nBuf)
-                inBufferedBounds = inBufferedBounds.and.(jy>=lby-nBuf).and.(jy<=uby+nBuf)
-                inBufferedBounds = inBufferedBounds.and.(jz>=lbz-nBuf).and.(jz<=ubz+nBuf)
+                inxBounds = (jx>=lbx-1).and.(jx<=ubx+1)
+                inxBounds = inxBounds.and.(jy>=lby-1).and.(jy<=uby+1)
+                inxBounds = inxBounds.and.(jz>=lbz-1).and.(jz<=ubz+1)
                 return
-            end function inBufferedBounds
+            end function inxBounds
+
+            pure logical function inAtomBounds(jx,jy,jz)
+        !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        !*      is the node (jx,jy,jz) in bounds of the array x(:,:,:,:) + buffer
+                integer,intent(in)          ::      jx,jy,jz
+                inAtomBounds = (jx>=lbx-1-nBuf).and.(jx<=ubx+1+nBuf)
+                inAtomBounds = inAtomBounds.and.(jy>=lby-1-nBuf).and.(jy<=uby+1+nBuf)
+                inAtomBounds = inAtomBounds.and.(jz>=lbz-1-nBuf).and.(jz<=ubz+1+nBuf)
+                return
+            end function inAtomBounds
 
         end subroutine computePhaseFactor1
 
@@ -458,12 +467,9 @@
 
         !---    weights of points in the stencil. w(r) = exp( - 2 r^2  )  
             real(kind=real32),parameter             ::      W0 = 1.0          
-            ! real(kind=real32),parameter             ::      W1 = exp( - 2.0 )
-            ! real(kind=real32),parameter             ::      W2 = exp( - 4.0 )
-            ! real(kind=real32),parameter             ::      W3 = exp( - 6.0 )
             real(kind=real32),parameter             ::      W1 = exp( - 2.0 )
-            real(kind=real32),parameter             ::      W2 = W1
-            real(kind=real32),parameter             ::      W3 = W1
+            real(kind=real32),parameter             ::      W2 = exp( - 4.0 )
+            real(kind=real32),parameter             ::      W3 = exp( - 6.0 )
 
         ! !---    stencils            
         !     real(kind=real64),dimension(-1:1,-1:1,-1:1),parameter       ::      STENCIL_DX = reshape( (/        &

@@ -231,10 +231,22 @@
             type(ImagingSpace),intent(in)          ::      this
             integer,intent(in),optional         ::      u,o
             integer     ::      uu,oo
+            integer     ::      ix,iy,Cx,Cy,pp
             uu = 6 ; if (present(u)) uu = u
             oo = 0 ; if (present(o)) oo = o
             write(unit=uu,fmt='(2(a,f16.8),5(a,i8))') repeat(" ",oo)//"ImagingSpace [a,sigma= ",this%a,",",this%sigma," , Nx,Ny,Nz= ",this%Nx,",",this%Ny,",",this%Nz,", nBuf=",this%nBuf," ]"
-            write(unit=uu,fmt='(6(a,i8))') repeat(" ",oo+4)//"my block ",this%lbx,":",this%ubx," , ",this%lby,":",this%uby," , ",0,":",this%Nz-1
+            !write(unit=uu,fmt='(6(a,i8))') repeat(" ",oo+4)//"my block ",this%lbx,":",this%ubx," , ",this%lby,":",this%uby," , ",0,":",this%Nz-1
+
+            Cx = ceiling(real(this%Nx)/this%Mx)
+            Cy = ceiling(real(this%Ny)/this%My)
+
+            do pp = 0,nProcs-1
+                iy = pp/this%Mx
+                ix = pp - this%Mx*iy
+                write (*,fmt='(10(a,i4))') repeat(" ",oo+4)//"proc ",pp,                        &
+                                " x ",ix*Cx,":",min( this%Nx-1,ix*Cx + Cx - 1 ),                &
+                                " y ",iy*Cy,":",min( this%Ny-1,iy*Cy + Cy - 1 )                  
+            end do            
             return
         end subroutine report0
 
@@ -258,7 +270,9 @@
             real(kind=real64),dimension(:),intent(in)   ::      xt
             logical,intent(in)                          ::      buffered
             integer         ::          ix,iy,iz
+            integer         ::          pad
 
+            pad = this%nBuf + 1         !   x-y directions need buffer + 1 extra cells 
             if (size(xt)==2) then
                 !   2d test - check xt(1:2) is in the x-y bounds, but do not test for z
                 
@@ -266,8 +280,8 @@
                 iy = floor( xt(2) )
 
                 if (buffered) then
-                    inMyCell0 = (ix>=this%lbx-this%nBuf) .and. (ix<=this%ubx+this%nBuf) 
-                    inMyCell0 = inMyCell0 .and. (iy>=this%lby-this%nBuf) .and. (iy<=this%uby+this%nBuf) 
+                    inMyCell0 = (ix>=this%lbx-pad) .and. (ix<=this%ubx+pad) 
+                    inMyCell0 = inMyCell0 .and. (iy>=this%lby-pad) .and. (iy<=this%uby+pad) 
                 else
                     inMyCell0 = (ix>=this%lbx) .and. (ix<=this%ubx) 
                     inMyCell0 = inMyCell0 .and. (iy>=this%lby) .and. (iy<=this%uby) 
@@ -281,8 +295,8 @@
                 iz = floor( xt(3) )
 
                 if (buffered) then
-                    inMyCell0 = (ix>=this%lbx-this%nBuf) .and. (ix<=this%ubx+this%nBuf) 
-                    inMyCell0 = inMyCell0 .and. (iy>=this%lby-this%nBuf) .and. (iy<=this%uby+this%nBuf) 
+                    inMyCell0 = (ix>=this%lbx-pad) .and. (ix<=this%ubx+pad) 
+                    inMyCell0 = inMyCell0 .and. (iy>=this%lby-pad) .and. (iy<=this%uby+pad) 
                     inMyCell0 = inMyCell0 .and. (iz>=-this%nBuf) .and. (iz<this%Nz+this%nBuf) 
                 else
                     inMyCell0 = (ix>=this%lbx) .and. (ix<=this%ubx) 
@@ -331,6 +345,11 @@
                     this%uby = min( this%Ny-1,this%lby + Cy - 1 )  
                     this%ix = ix
                     this%iy = iy                  
+                end if
+                if (rank == 0) then
+                    write (*,fmt='(10(a,i4))') " Lib_ImagingSpace::setMyBounds info - proc ",pp,    &
+                                " x ",ix*Cx,":",min( this%Nx-1,ix*Cx + Cx - 1 ),                 &
+                                " y ",iy*Cy,":",min( this%Ny-1,iy*Cy + Cy - 1 )                 
                 end if
             end do
 

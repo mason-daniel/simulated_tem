@@ -35,8 +35,9 @@
         use Lib_ReadExtinctionDistances
         use Lib_DeformationGradients
         use Lib_FibonacciSphere
-        use Lib_CrystalStructureFactor
+        use Lib_CrystalStructureFactor        
         use Lib_RK4
+        use Lib_Filenames
 #ifdef MPI
         use mpi_f08
 #endif
@@ -1396,7 +1397,7 @@
              
 
         !---    can now make my transformation on the atom positions, and store all the periodic copies I need.
-        !       count the number of atoms after periodic copies
+        !       first count the number of atoms after periodic copies...
             mynAtoms = 0
             do ii = 1,this%nAtoms
                 call periodicCopies(this%as,this%is,this%r(:,ii),np,xtp)
@@ -1404,8 +1405,8 @@
                     if (inMyCell(this%is,xtp(:,jj),buffered=.true.)) mynAtoms = mynAtoms + 1
                 end do
             end do
-            print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," mynAtoms = ",mynAtoms,"/",this%nAtoms
 
+        !       then store the atoms after periodic copies
             allocate(rt_tmp(3,mynAtoms))
             mynAtoms = 0
             do ii = 1,this%nAtoms
@@ -1417,6 +1418,10 @@
                     end if
                 end do
             end do
+            print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," mynAtoms = ",mynAtoms,"/",this%nAtoms
+            print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," minmax x ",minval(rt_tmp(1,:)),maxval(rt_tmp(1,:))
+            print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," minmax y ",minval(rt_tmp(2,:)),maxval(rt_tmp(2,:))
+            print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," minmax z ",minval(rt_tmp(3,:)),maxval(rt_tmp(3,:))
 
             deallocate(this%r)                                  !   note that this deallocates the memory read in from the .xyz file
             this%nAtoms = mynAtoms
@@ -1518,8 +1523,8 @@
 
 
         !---    dump of atom positions and z-slice
-            if ((rank==0).and.LIB_IMB_DBG) then                
-                open(unit=500,file="test.xyz",action="write")
+            if (LIB_IMB_DBG .and. (iz==0)) then                
+                open(unit=500,file=trim(numberFile("test",rank,"xyz")),action="write")
                     write(unit=500,fmt='(i8)') this%nAtoms + (bb(2,1)+1-bb(1,1))*(bb(2,2)+1-bb(1,2))*this%zlayers
                     write(unit=500,fmt='(a,9f12.6,a)') "Lattice=""",getA_super(this%as),""" Properties=Species:S:1:Pos:R:3:rho:R:1:GradArgX:R:3"
                     do ii = 1,this%nAtoms
