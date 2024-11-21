@@ -144,13 +144,12 @@
 
         interface   getBounds
             module procedure        getBounds0
+            module procedure        getBounds1
         end interface
  
 
-
     contains
 !---^^^^^^^^
-
 
 
 !******************************************************************************
@@ -260,8 +259,8 @@
 !******************************************************************************
 
         
-        pure logical function inMyCell0(this,xt,buffered)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pure logical function inMyCell0(this,xt,buffered,border)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      given the reduced space position
     !*          xt = R (x-delta)/a
     !*      return true if the atom is in a cell I am responsible for.
@@ -269,10 +268,11 @@
             type(ImagingSpace),intent(in)               ::      this
             real(kind=real64),dimension(:),intent(in)   ::      xt
             logical,intent(in)                          ::      buffered
+            integer,intent(in)                          ::      border      !   required for non-columnar apprxo
             integer         ::          ix,iy,iz
             integer         ::          pad
 
-            pad = this%nBuf + 1         !   x-y directions need buffer + 1 extra cells 
+            pad = this%nBuf          !   x-y directions need buffer + 1 extra cells + optionally x-y needs extra border for non-columnar approx
             if (size(xt)==2) then
                 !   2d test - check xt(1:2) is in the x-y bounds, but do not test for z
                 
@@ -280,8 +280,8 @@
                 iy = floor( xt(2) )
 
                 if (buffered) then
-                    inMyCell0 = (ix>=this%lbx-pad) .and. (ix<=this%ubx+pad) 
-                    inMyCell0 = inMyCell0 .and. (iy>=this%lby-pad) .and. (iy<=this%uby+pad) 
+                    inMyCell0 = (ix>=this%lbx-pad-border) .and. (ix<=this%ubx+pad+border) 
+                    inMyCell0 = inMyCell0 .and. (iy>=this%lby-pad-border) .and. (iy<=this%uby+pad+border) 
                 else
                     inMyCell0 = (ix>=this%lbx) .and. (ix<=this%ubx) 
                     inMyCell0 = inMyCell0 .and. (iy>=this%lby) .and. (iy<=this%uby) 
@@ -295,8 +295,8 @@
                 iz = floor( xt(3) )
 
                 if (buffered) then
-                    inMyCell0 = (ix>=this%lbx-pad) .and. (ix<=this%ubx+pad) 
-                    inMyCell0 = inMyCell0 .and. (iy>=this%lby-pad) .and. (iy<=this%uby+pad) 
+                    inMyCell0 = (ix>=this%lbx-pad-border) .and. (ix<=this%ubx+pad+border) 
+                    inMyCell0 = inMyCell0 .and. (iy>=this%lby-pad-border) .and. (iy<=this%uby+pad+border) 
                     inMyCell0 = inMyCell0 .and. (iz>=-this%nBuf) .and. (iz<this%Nz+this%nBuf) 
                 else
                     inMyCell0 = (ix>=this%lbx) .and. (ix<=this%ubx) 
@@ -308,16 +308,18 @@
             return
         end function inMyCell0
 
-        pure logical function inMyCell1(this,xt,buffered)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pure logical function inMyCell1(this,xt,buffered,border)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      given the reduced space position
     !*          xt = R (x-delta)/a
     !*      return true if the atom is in a cell I am responsible for.
     !*      optionally return true if within the buffered region
+    
             type(ImagingSpace),intent(in)               ::      this
             real(kind=real32),dimension(:),intent(in)   ::      xt
             logical,intent(in)                          ::      buffered
-            inMyCell1 = inMyCell0(this,real(xt,kind=real64),buffered)
+            integer,intent(in)                          ::      border      !   required for non-columnar apprxo
+            inMyCell1 = inMyCell0(this,real(xt,kind=real64),buffered,border)
 
             return
         end function inMyCell1        
@@ -377,23 +379,48 @@
 
         !---    no periodic boundaries. Assume that I hold the edge, unless proved otherwise.
             this%neigh(:) = rank             
-            jx = this%ix     ; jy = this%iy + 1
-            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(N)  = this%p( jx,jy )
-            jx = this%ix + 1 ; jy = this%iy + 1 
-            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(NE) = this%p( jx,jy )
-            jx = this%ix + 1 ; jy = this%iy 
-            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(E)  = this%p( jx,jy )
-            jx = this%ix + 1 ; jy = this%iy - 1
-            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(SE) = this%p( jx,jy )
-            jx = this%ix     ; jy = this%iy - 1
-            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(S)  = this%p( jx,jy )
-            jx = this%ix - 1 ; jy = this%iy - 1
-            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(SW) = this%p( jx,jy )
-            jx = this%ix - 1 ; jy = this%iy  
-            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(W)  = this%p( jx,jy )
-            jx = this%ix - 1 ; jy = this%iy + 1
-            if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(NW) = this%p( jx,jy )
+            ! jx = this%ix     ; jy = this%iy + 1
+            ! if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(N)  = this%p( jx,jy )
+            ! jx = this%ix + 1 ; jy = this%iy + 1 
+            ! if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(NE) = this%p( jx,jy )
+            ! jx = this%ix + 1 ; jy = this%iy 
+            ! if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(E)  = this%p( jx,jy )
+            ! jx = this%ix + 1 ; jy = this%iy - 1
+            ! if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(SE) = this%p( jx,jy )
+            ! jx = this%ix     ; jy = this%iy - 1
+            ! if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(S)  = this%p( jx,jy )
+            ! jx = this%ix - 1 ; jy = this%iy - 1
+            ! if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(SW) = this%p( jx,jy )
+            ! jx = this%ix - 1 ; jy = this%iy  
+            ! if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(W)  = this%p( jx,jy )
+            ! jx = this%ix - 1 ; jy = this%iy + 1
+            ! if ( (jx>=0).and.(jx<this%Mx).and.(jy>=0).and.(jy<this%My) ) this%neigh(NW) = this%p( jx,jy )
 
+            jx = mod( this%ix     + this%Mx , this%Mx ) ; jy = mod( this%iy + 1 + this%My , this%My )
+            this%neigh(N)  = this%p( jx,jy )
+            jx = mod( this%ix + 1 + this%Mx , this%Mx ) ; jy = mod( this%iy + 1 + this%My , this%My )
+            this%neigh(NE) = this%p( jx,jy )
+            jx = mod( this%ix + 1 + this%Mx , this%Mx ) ; jy = mod( this%iy     + this%My , this%My )
+            this%neigh(E)  = this%p( jx,jy )
+            jx = mod( this%ix + 1 + this%Mx , this%Mx ) ; jy = mod( this%iy - 1 + this%My , this%My )
+            this%neigh(SE) = this%p( jx,jy )
+            jx = mod( this%ix     + this%Mx , this%Mx ) ; jy = mod( this%iy - 1 + this%My , this%My )
+            this%neigh(S)  = this%p( jx,jy )
+            jx = mod( this%ix - 1 + this%Mx , this%Mx ) ; jy = mod( this%iy - 1 + this%My , this%My )
+            this%neigh(SW) = this%p( jx,jy )
+            jx = mod( this%ix - 1 + this%Mx , this%Mx ) ; jy = mod( this%iy     + this%My , this%My )
+            this%neigh(W)  = this%p( jx,jy )
+            jx = mod( this%ix - 1 + this%Mx , this%Mx ) ; jy = mod( this%iy + 1 + this%My , this%My )
+            this%neigh(NW) = this%p( jx,jy )
+
+        !---    if the corner neighbours are the same as one of the edge neighbours, then I don't need to sendrecv. So set neigh to self, and no excnahge is sone
+            if ( (this%neigh(NE) == this%neigh(N)).or.(this%neigh(NE) == this%neigh(E)) ) this%neigh(NE) = rank
+            if ( (this%neigh(NW) == this%neigh(N)).or.(this%neigh(NW) == this%neigh(W)) ) this%neigh(NW) = rank
+            if ( (this%neigh(SE) == this%neigh(S)).or.(this%neigh(SE) == this%neigh(E)) ) this%neigh(SE) = rank
+            if ( (this%neigh(SW) == this%neigh(S)).or.(this%neigh(SW) == this%neigh(W)) ) this%neigh(SW) = rank
+
+
+            write(*,fmt='(a,i6,a,8i6)') "Lib_ImagingSpace::setMyNeighbours rank ",rank," neighbours ",this%neigh
 
             ! print *,"setMyNeighbours ",rank,this%neigh
             ! neigh(1) = this%p( mod(this%ix+this%Mx+0,this%Mx),mod(this%iy+this%My+1,this%My) )
@@ -406,6 +433,7 @@
             ! neigh(8) = this%p( mod(this%ix+this%Mx-1,this%Mx),mod(this%iy+this%My+1,this%My) )
 
             return
+
         end subroutine setMyNeighbours
 
         pure integer function whoseBlock( this,ix,iy )
@@ -446,8 +474,8 @@
 
 
 
-        subroutine sendrecv( this,phi )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        subroutine sendrecv( this,phi,border )
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      complete the update of the diffracted electron beams at slice z
     !*      by exchanging information across processors
     !*      For send/recv operations, the ordering of the neighbours is
@@ -458,86 +486,136 @@
     !*          +---+       +---->x
     !*        6   5   4                  
             type(ImagingSpace),intent(in)                                       ::      this
-            complex(kind=real64),dimension(:,:,:),pointer,intent(inout)         ::      phi                 !   (0:nG,lbx:ubx,lby:uby)      a 2d slice of phi, of which (lbx+1:ubx-1) is interior
-            integer                         ::      nG,lbx,ubx,lby,uby
+            complex(kind=real64),dimension(:,:,:),pointer,intent(inout)         ::      phi                 !   (0:nG,lbx-border:ubx+border,lby-border:uby+border)      a 2d slice of phi, of which (lbx+1:ubx-1) is interior
+            integer,intent(in)                                                  ::      border
+            integer                         ::      nG ,dx,dy! ,lbx,ubx,lby,uby
+
+            logical,save                                                        ::      firstcall = .true.
+            complex(kind=real64),dimension(:,:,:),allocatable,save              ::      phi_send_N , phi_recv_N 
+            complex(kind=real64),dimension(:,:,:),allocatable,save              ::      phi_send_E , phi_recv_S 
+            complex(kind=real64),dimension(:,:,:),allocatable,save              ::      phi_send_S , phi_recv_E 
+            complex(kind=real64),dimension(:,:,:),allocatable,save              ::      phi_send_W , phi_recv_W 
+            complex(kind=real64),dimension(:,:,:),allocatable,save              ::      phi_send_NE, phi_recv_NE
+            complex(kind=real64),dimension(:,:,:),allocatable,save              ::      phi_send_SE, phi_recv_SE
+            complex(kind=real64),dimension(:,:,:),allocatable,save              ::      phi_send_SW, phi_recv_SW
+            complex(kind=real64),dimension(:,:,:),allocatable,save              ::      phi_send_NW, phi_recv_NW
+
 
 #ifdef MPI            
-            integer                         ::      ierror
-            integer,dimension(8)            ::      tag           
-            type(MPI_Request),dimension(8)  ::      request
+            integer                             ::      ierror
+            integer,dimension(8),parameter      ::      tag     = 10000 + (/ N ,NE,E ,SE,S ,SW,W ,NW /)         
+            type(MPI_Request),dimension(16)     ::      request
 #endif
+            if (nProcs==1) return
 
+
+
+          
         !---    determine size of problem
-            nG  = ubound( phi,dim=1 )
-            lbx = lbound( phi,dim=2 )
-            ubx = ubound( phi,dim=2 )
-            lby = lbound( phi,dim=3 )
-            uby = ubound( phi,dim=3 )
+            nG  = size( phi,dim=1 )
+            dx = this%ubx+1-this%lbx
+            dy = this%uby+1-this%lby
 
-            print *,"sendrecv rank ",rank,(ubx-lbx-1),(uby-lby-1)
-
-        !---    complete the boundary update where I hold edge, by interpolating out
-            if (this%neigh(S) == rank) phi(:,lbx+1:ubx-1,lby) = 3*phi(:,lbx+1:ubx-1,lby+1) - 3*phi(:,lbx+1:ubx-1,lby+2) + phi(:,lbx+1:ubx-1,lby+3) 
-            if (this%neigh(N) == rank) phi(:,lbx+1:ubx-1,uby) = phi(:,lbx+1:ubx-1,uby-3) - 3*phi(:,lbx+1:ubx-1,uby-2) + 3*phi(:,lbx+1:ubx-1,uby-1)
-            if (this%neigh(W) == rank) phi(:,lbx,lby+1:uby-1) = 3*phi(:,lbx+1,lby+1:uby-1) - 3*phi(:,lbx+1,lby+1:uby-1) + phi(:,lbx+2,lby+1:uby-1)
-            if (this%neigh(E) == rank) phi(:,ubx,lby+1:uby-1) = phi(:,ubx-3,lby+1:uby-1) - 3*phi(:,ubx-2,lby+1:uby-1) + 3*phi(:,ubx-1,lby+1:uby-1)
+            !print *,"sendrecv rank ",rank," start ",size(phi,dim=2),size(phi,dim=3),lbound(phi,dim=2),ubound(phi,dim=2),lbound(phi,dim=3),ubound(phi,dim=3),dx,dy
 
 
+        !---    allocate explicit buffers if necessary
+            if (firstcall) then
+                if (this%neigh(N) /= rank) then
+                    allocate(phi_send_N(nG,dx,border))
+                    allocate(phi_recv_N(nG,dx,border))
+                end if
+                if (this%neigh(E) /= rank) then
+                    allocate(phi_send_E(nG,border,dy))
+                    allocate(phi_recv_E(nG,border,dy))
+                end if
+                if (this%neigh(S) /= rank) then
+                    allocate(phi_send_S(nG,dx,border))
+                    allocate(phi_recv_S(nG,dx,border))
+                end if
+                if (this%neigh(W) /= rank) then
+                    allocate(phi_send_W(nG,border,dy))
+                    allocate(phi_recv_W(nG,border,dy))
+                end if
+                if (this%neigh(NE)/= rank) then
+                    allocate(phi_send_NE(nG,border,border))
+                    allocate(phi_recv_NE(nG,border,border))
+                end if
+                if (this%neigh(SE)/= rank) then
+                    allocate(phi_send_SE(nG,border,border))
+                    allocate(phi_recv_SE(nG,border,border))
+                end if
+                if (this%neigh(SW)/= rank) then
+                    allocate(phi_send_SW(nG,border,border))
+                    allocate(phi_recv_SW(nG,border,border))
+                end if
+                if (this%neigh(NW)/= rank) then
+                    allocate(phi_send_NW(nG,border,border))
+                    allocate(phi_recv_NW(nG,border,border))
+                end if
+                firstcall = .false.
+            end if
+
+ 
 
 #ifdef MPI
-            
+             
+   
             request = MPI_REQUEST_NULL
-        !---    find my neighbours
-            !call myNeighbours( this, neigh )            
- 
-            tag(1:8) = 10000 + (/ N ,NE,E ,SE,S ,SW,W ,NW /)
-
-            if (this%neigh(N) /= rank) print *,"sendrecv rank ",rank," post recv from ",this%neigh(N),tag(N)
-            if (this%neigh(E) /= rank) print *,"sendrecv rank ",rank," post recv from ",this%neigh(E),tag(E)
-            if (this%neigh(S) /= rank) print *,"sendrecv rank ",rank," post recv from ",this%neigh(S),tag(S)
-            if (this%neigh(W) /= rank) print *,"sendrecv rank ",rank," post recv from ",this%neigh(W),tag(W)
 
 
-        !---    post the receives
-            if (this%neigh(N) /= rank) call MPI_IRECV( phi(:,lbx+1:ubx-1,uby),(nG+1)*(ubx-lbx-1),MPI_DOUBLE_COMPLEX,this%neigh(N),tag(N),MPI_COMM_WORLD,request(1), ierror )
-            if (this%neigh(E) /= rank) call MPI_IRECV( phi(:,ubx,lby+1:uby-1),(nG+1)*(uby-lby-1),MPI_DOUBLE_COMPLEX,this%neigh(E),tag(E),MPI_COMM_WORLD,request(2), ierror )
-            if (this%neigh(S) /= rank) call MPI_IRECV( phi(:,lbx+1:ubx-1,lby),(nG+1)*(ubx-lbx-1),MPI_DOUBLE_COMPLEX,this%neigh(S),tag(S),MPI_COMM_WORLD,request(3), ierror )
-            if (this%neigh(W) /= rank) call MPI_IRECV( phi(:,lbx,lby+1:uby-1),(nG+1)*(uby-lby-1),MPI_DOUBLE_COMPLEX,this%neigh(W),tag(W),MPI_COMM_WORLD,request(4), ierror )
+        !---    post the receives 
+            if (this%neigh(N) /= rank) call MPI_IRECV( phi_recv_N  , size(phi_recv_N ) , MPI_DOUBLE_COMPLEX,this%neigh(N) ,tag(N) ,MPI_COMM_WORLD,request(1), ierror )
+            if (this%neigh(E) /= rank) call MPI_IRECV( phi_recv_E  , size(phi_recv_E ) , MPI_DOUBLE_COMPLEX,this%neigh(E) ,tag(E) ,MPI_COMM_WORLD,request(2), ierror )
+            if (this%neigh(S) /= rank) call MPI_IRECV( phi_recv_S  , size(phi_recv_S ) , MPI_DOUBLE_COMPLEX,this%neigh(S) ,tag(S) ,MPI_COMM_WORLD,request(3), ierror )
+            if (this%neigh(W) /= rank) call MPI_IRECV( phi_recv_W  , size(phi_recv_W ) , MPI_DOUBLE_COMPLEX,this%neigh(W) ,tag(W) ,MPI_COMM_WORLD,request(4), ierror )
+            if (this%neigh(NE)/= rank) call MPI_IRECV( phi_recv_NE , size(phi_recv_NE) , MPI_DOUBLE_COMPLEX,this%neigh(NE),tag(NE),MPI_COMM_WORLD,request(5), ierror )
+            if (this%neigh(SE)/= rank) call MPI_IRECV( phi_recv_SE , size(phi_recv_SE) , MPI_DOUBLE_COMPLEX,this%neigh(SE),tag(SE),MPI_COMM_WORLD,request(6), ierror )
+            if (this%neigh(SW)/= rank) call MPI_IRECV( phi_recv_SW , size(phi_recv_SW) , MPI_DOUBLE_COMPLEX,this%neigh(SW),tag(SW),MPI_COMM_WORLD,request(7), ierror )
+            if (this%neigh(NW)/= rank) call MPI_IRECV( phi_recv_NW , size(phi_recv_NW) , MPI_DOUBLE_COMPLEX,this%neigh(NW),tag(NW),MPI_COMM_WORLD,request(8), ierror )
 
+        !---    place information to send into send buffers
+            if (this%neigh(N) /= rank) phi_send_N (:,:,:) = phi(:,this%lbx:this%ubx,this%uby-border+1:this%uby)        
+            if (this%neigh(E) /= rank) phi_send_E (:,:,:) = phi(:,this%ubx-border+1:this%ubx,this%lby:this%uby)        
+            if (this%neigh(S) /= rank) phi_send_S (:,:,:) = phi(:,this%lbx:this%ubx,this%lby:this%lby+border-1)        
+            if (this%neigh(W) /= rank) phi_send_W (:,:,:) = phi(:,this%lbx:this%lbx+border-1,this%lby:this%uby)        
+            if (this%neigh(NE)/= rank) phi_send_NE(:,:,:) = phi(:,this%ubx-border+1:this%ubx,this%uby-border+1:this%uby)
+            if (this%neigh(SE)/= rank) phi_send_SE(:,:,:) = phi(:,this%ubx-border+1:this%ubx,this%lby:this%lby+border-1)
+            if (this%neigh(SW)/= rank) phi_send_SW(:,:,:) = phi(:,this%lbx:this%lbx+border-1,this%lby:this%lby+border-1)
+            if (this%neigh(NW)/= rank) phi_send_NW(:,:,:) = phi(:,this%lbx:this%lbx+border-1,this%uby-border+1:this%uby)
 
         !---    post the sends
-    !*        8   1   2     y
-    !*          +---+       ^
-    !*        7 |   | 3     |
-    !*          +---+       +---->x
-    !*        6   5   4  
-            if (this%neigh(N) /= rank) print *,"sendrecv rank ",rank," post send to ",this%neigh(N),tag(S)
-            if (this%neigh(E) /= rank) print *,"sendrecv rank ",rank," post send to ",this%neigh(E),tag(W)
-            if (this%neigh(S) /= rank) print *,"sendrecv rank ",rank," post send to ",this%neigh(S),tag(N)
-            if (this%neigh(W) /= rank) print *,"sendrecv rank ",rank," post send to ",this%neigh(W),tag(E)
+            if (this%neigh(N) /= rank) call MPI_ISEND( phi_send_N  , size(phi_send_N ) , MPI_DOUBLE_COMPLEX,this%neigh(N) ,tag(S) ,MPI_COMM_WORLD,request(9) , ierror )
+            if (this%neigh(E) /= rank) call MPI_ISEND( phi_send_E  , size(phi_send_E ) , MPI_DOUBLE_COMPLEX,this%neigh(E) ,tag(W) ,MPI_COMM_WORLD,request(10), ierror )
+            if (this%neigh(S) /= rank) call MPI_ISEND( phi_send_S  , size(phi_send_S ) , MPI_DOUBLE_COMPLEX,this%neigh(S) ,tag(N) ,MPI_COMM_WORLD,request(11), ierror )
+            if (this%neigh(W) /= rank) call MPI_ISEND( phi_send_W  , size(phi_send_W ) , MPI_DOUBLE_COMPLEX,this%neigh(W) ,tag(E) ,MPI_COMM_WORLD,request(12), ierror )
+            if (this%neigh(NE)/= rank) call MPI_ISEND( phi_send_NE , size(phi_send_NE) , MPI_DOUBLE_COMPLEX,this%neigh(NE),tag(SW),MPI_COMM_WORLD,request(13), ierror )
+            if (this%neigh(SE)/= rank) call MPI_ISEND( phi_send_SE , size(phi_send_SE) , MPI_DOUBLE_COMPLEX,this%neigh(SE),tag(NW),MPI_COMM_WORLD,request(14), ierror )
+            if (this%neigh(SW)/= rank) call MPI_ISEND( phi_send_SW , size(phi_send_SW) , MPI_DOUBLE_COMPLEX,this%neigh(SW),tag(NE),MPI_COMM_WORLD,request(15), ierror )
+            if (this%neigh(NW)/= rank) call MPI_ISEND( phi_send_NW , size(phi_send_NW) , MPI_DOUBLE_COMPLEX,this%neigh(NW),tag(SE),MPI_COMM_WORLD,request(16), ierror )
 
-
-            if (this%neigh(N) /= rank) call MPI_ISEND( phi(:,lbx+1:ubx-1,lby+1),(nG+1)*(ubx-lbx-1),MPI_DOUBLE_COMPLEX,this%neigh(N),tag(S),MPI_COMM_WORLD,request(5) ,ierror )
-            if (this%neigh(E) /= rank) call MPI_ISEND( phi(:,lbx+1,lby+1:uby-1),(nG+1)*(uby-lby-1),MPI_DOUBLE_COMPLEX,this%neigh(E),tag(W),MPI_COMM_WORLD,request(6), ierror )
-            if (this%neigh(S) /= rank) call MPI_ISEND( phi(:,lbx+1:ubx-1,uby-1),(nG+1)*(ubx-lbx-1),MPI_DOUBLE_COMPLEX,this%neigh(S),tag(N),MPI_COMM_WORLD,request(7), ierror )
-            if (this%neigh(W) /= rank) call MPI_ISEND( phi(:,ubx-1,lby+1:uby-1),(nG+1)*(uby-lby-1),MPI_DOUBLE_COMPLEX,this%neigh(W),tag(E),MPI_COMM_WORLD,request(8), ierror )
-
-
-
-        !---    wait for the send=recv to complete
+        !---    wait for messages to be received.
             call MPI_WAITALL( size(request),request,MPI_STATUSES_IGNORE,ierror )
-#endif
+
+        !---    unpack the received information 
+            if (this%neigh(N) /= rank) phi(:,this%lbx:this%ubx,this%uby+1:this%uby+border)          = phi_recv_N (:,:,:)
+            if (this%neigh(E) /= rank) phi(:,this%ubx+1:this%ubx+border,this%lby:this%uby)          = phi_recv_E (:,:,:)
+            if (this%neigh(S) /= rank) phi(:,this%lbx:this%ubx,this%lby-border:this%lby-1)          = phi_recv_S (:,:,:)
+            if (this%neigh(W) /= rank) phi(:,this%lbx-border:this%lbx-1,this%lby:this%uby)          = phi_recv_W (:,:,:)
+            if (this%neigh(NE)/= rank) phi(:,this%ubx+1:this%ubx+border,this%uby+1:this%uby+border) = phi_recv_NE(:,:,:)
+            if (this%neigh(SE)/= rank) phi(:,this%ubx+1:this%ubx+border,this%lby-border:this%lby-1) = phi_recv_SE(:,:,:)
+            if (this%neigh(SW)/= rank) phi(:,this%lbx-border:this%lbx-1,this%lby-border:this%lby-1) = phi_recv_SW(:,:,:)
+            if (this%neigh(NW)/= rank) phi(:,this%lbx-border:this%lbx-1,this%uby+1:this%uby+border) = phi_recv_NW(:,:,:)
+
+
  
 
-        !---    complete the corners
-            print *,"sendrecv rank ",rank," corners"
-            phi(:,ubx,uby) = ( phi(:,ubx,uby-3) - 3*phi(:,ubx,uby-2) + 3*phi(:,ubx,uby-1) + phi(:,ubx-3,uby) - 3*phi(:,ubx-2,uby) + 3*phi(:,ubx-1,uby) )/2
-            phi(:,ubx,lby) = ( 3*phi(:,ubx,lby+1) - 3*phi(:,ubx,lby+2) + phi(:,ubx,lby+3) + phi(:,ubx-3,lby) - 3*phi(:,ubx-2,lby) + 3*phi(:,ubx-1,lby) )/2
-            phi(:,lbx,lby) = ( 3*phi(:,lbx,lby+1) - 3*phi(:,lbx,lby+2) + phi(:,lbx,lby+3) + 3*phi(:,lbx+1,lby) - 3*phi(:,lbx+2,lby) + phi(:,lbx+3,lby) )/2
-            phi(:,lbx,uby) = ( phi(:,lbx,uby-3) - 3*phi(:,lbx,uby-2) + 3*phi(:,lbx,uby-1) + 3*phi(:,lbx+1,uby) - 3*phi(:,lbx+2,uby) + phi(:,lbx+3,uby) )/2
-            print *,"sendrecv rank ",rank," done"
 
 
+            !call MPI_BARRIER( MPI_COMM_WORLD,ierror )
+            !print *,"sendrecv rank ",rank," done "
+#endif
+  
             return
         end subroutine sendrecv
 
@@ -653,6 +731,16 @@
             return
         end subroutine getBounds0
  
+        pure subroutine getBounds1(this,lbx,ubx,lby,uby) 
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            type(ImagingSpace),intent(in)           ::      this
+            integer,intent(out)                     ::      lbx,ubx,lby,uby
+            lbx = this%lbx
+            ubx = this%ubx
+            lby = this%lby
+            uby = this%uby
+            return
+        end subroutine getBounds1
 
 
 

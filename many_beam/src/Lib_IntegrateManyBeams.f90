@@ -119,6 +119,7 @@
             real(kind=real64)                                   ::      omega0              !   volume per atom
             
             logical                                             ::      columnar            !   use columnar approximation
+            integer                                             ::      border              !   need extra border of cells if columnar approx is used
             logical                                             ::      lossy               !   use imaginary parts of crystal srtucture factor
             integer(kind=STATUS)                                ::      status              !   status of calculation
 
@@ -202,6 +203,7 @@
             this%omega0 = 0
             nullify(this%r)
             this%columnar = .true.
+            this%border = 1
             this%lossy = .true.
             nullify(this%slice)
             this%status = LIB_IMB_STATUS_UNSET
@@ -216,7 +218,7 @@
     !*      Sets a default large number of g-vectors and no foil tilt.
     !*      Sets the default atom space assuming no foil tilt.
     !*      Does not compute the optimal foil tilt
-    !*      Does not set the final short list of g-vectors
+    !*      Does not set the final short list of g-vectorsif (this%columnar) this%border = 1
     !*      Does not set the imaging space 
     !*      Does not compute the phase factors
     !        
@@ -246,7 +248,7 @@
             this%V = V * 1000
             this%precAngle = precAngle
             this%nPrec = max(1,nPrec)
-            
+            if (.not. this%columnar) this%border = 2
 
 
         !---    read input file            
@@ -550,7 +552,7 @@
  
         !---    find the perfect lattice intensities
             LL = getThickness(this%as)
-            if(rank==0) print *,"Lib_IntegrateManyBeams::perfectLatticeIntensity0 info - foil thickness ",LL
+            if ( (rank==0).and.LIB_IMB_DBG ) print *,"Lib_IntegrateManyBeams::perfectLatticeIntensity0 info - foil thickness ",LL
             nG = getn(this%gv)
             allocate(Ig(0:nG))
             allocate(Igm(0:nG))
@@ -603,13 +605,13 @@
         end subroutine applyFoilTilt
             
 
-        subroutine getIntensity0(this,hkl,I)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        subroutine getIntensity0(this,hkl,img)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      get the result at a given g-vector.
     !*      gather on rank 0
             type(IntegrateManyBeams),intent(in)     ::      this
             integer,dimension(:),intent(in)         ::      hkl
-            real(kind=real64),dimension(:,:),allocatable    ::      I
+            real(kind=real64),dimension(:,:),allocatable    ::      img
 
             integer                     ::      ii
             integer                     ::      ix,iy,nx,ny
@@ -635,8 +637,8 @@
         !---    allocate space for output image
             nx = getNx(this%is)
             ny = getNy(this%is)
-            allocate(I(0:nx-1,0:ny-1))
-            I = 0
+            allocate(img(0:nx-1,0:ny-1))
+            img = 0
             
             
         
@@ -661,7 +663,7 @@
                                     phig = this%slice(mm)%phi( ii,ix,iy )
                                     Ig = Ig + real(phig)*real(phig) + aimag(phig)*aimag(phig)
                                 end do
-                                I(ix,iy) = Ig
+                                img(ix,iy) = Ig
                             end do
                         end do
                         
@@ -673,12 +675,12 @@
 #ifdef MPI
             if (nprocs>1) then
                 allocate(I_tmp(0:nx-1,0:ny-1))
-                I_tmp = I
-                call MPI_REDUCE( I_tmp,I,nx*ny,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,ierror )
+                I_tmp = img
+                call MPI_REDUCE( I_tmp,img,nx*ny,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,ierror )
             end if
 #endif        
 
-            I = I / this%nPrec
+            img = img / this%nPrec
            
             return
         end subroutine getIntensity0
@@ -861,7 +863,7 @@
                 call completeBasis( R(:,3),R(:,1),R(:,2) )
             end if
             L_R = getThickness( this%as,R )                 !   returns new thickness, assuming that a virtual tilt is applied
-            if (rank==0) print *,R,L_R
+            !if (rank==0) print *,R,L_R
             call perfectLatticeIntensity( this%mb(1), L_R, R, maxIntensity, Ig_R )
             Ik_R = Ig_R(kk)
             if (bright) then                
@@ -953,10 +955,10 @@
             nz = getNz(this%is)
             nG = getn(this%gv)
             call getBounds(this%is,bb)
-            bb(1,:) = bb(1,:) - 1           !   buffer pixel
-            bb(2,:) = bb(2,:) + 1           !   buffer pixel
-            my_nx = bb(2,1)+1-bb(1,1)
-            my_ny = bb(2,2)+1-bb(1,2)
+        !    bb(1,:) = bb(1,:) - 1           !   buffer pixel
+        !    bb(2,:) = bb(2,:) + 1           !   buffer pixel
+            my_nx = bb(2,1)+2*this%border+1-bb(1,1)
+            my_ny = bb(2,2)+2*this%border+1-bb(1,2)
             
             deltaz = 2*geta(this%is)                            !   dz = 2a because the RK4 integrator needs to evaluate at half steps
             integrator = RK4_ctor( n=(nG+1) * my_nx * my_ny, deltaz=deltaz  )     
@@ -965,7 +967,7 @@
 
         !---    get pointers to current state and derivative stored in the integrator
             call getphip_dphip(integrator , rk_phip,rk_dphip)           
-            allocate(dphidz(0:nG,bb(1,1):bb(2,1),bb(1,2):bb(2,2)))
+            allocate(dphidz(0:nG,bb(1,1)-this%border:bb(2,1)+this%border,bb(1,2)-this%border:bb(2,2)+this%border))
 
 
         !---    set boundary conditions at z=0
@@ -989,13 +991,12 @@
 
 
                 do mm = 1,this%nPrec
-
-                    rk_phip = pack(this%slice(mm)%phi,.true.)
+                    rk_phip(:) = pack(this%slice(mm)%phi(:,:,:),.true.)
                     call update(integrator)
                     dz = 0
                     do rk_step = 1,4
                     !   ensure that phi is distributed correctly 
-                        this%slice(mm)%phi(0:nG,bb(1,1):bb(2,1),bb(1,2):bb(2,2)) = reshape( rk_phip, (/nG+1,my_nx,my_ny/) )
+                        this%slice(mm)%phi(:,:,:) = reshape( rk_phip, (/nG+1,my_nx,my_ny/) )
                     !   compute dphidz
                         call finddPhidz( this%mb(mm) , this%slice(mm)%phi , iz-iz_layer+dz, dphidz, this%columnar )
                         rk_dphip = pack(dphidz,.true.)
@@ -1003,8 +1004,8 @@
                         call update(integrator,rk_step,dz)
                        
                     end do
-                    this%slice(mm)%phi(0:nG,bb(1,1):bb(2,1),bb(1,2):bb(2,2)) = reshape( rk_phip, (/nG+1,my_nx,my_ny/) )
-                    if (.not. this%columnar) call sendrecv( this%is,this%slice(mm)%phi )
+                    this%slice(mm)%phi(:,:,:) = reshape( rk_phip(:), (/nG+1,my_nx,my_ny/) )
+                    if (.not. this%columnar) call sendrecv( this%is,this%slice(mm)%phi,this%border )
 
                 end do
 
@@ -1056,7 +1057,7 @@
             
 
 
-
+            nn = 0
             if (present(rho_in)) then
             !---    find all reflections within certain radius
                 call permittedReflections( this%latt,nn,hkl,rho_in )            
@@ -1393,16 +1394,16 @@
             call setDelta(this%as,Nx,Ny,Nz)             !   can't know the offset until the imaging space is known.
 
             this%is = ImagingSpace_ctor( geta(this),getSigma(this), getdelta(this%as),Nx,Ny,Nz )
-            if (rank==0) call report(this%is) 
+            !if (rank==0) call report(this%is) 
              
 
         !---    can now make my transformation on the atom positions, and store all the periodic copies I need.
         !       first count the number of atoms after periodic copies...
             mynAtoms = 0
             do ii = 1,this%nAtoms
-                call periodicCopies(this%as,this%is,this%r(:,ii),np,xtp)
+                call periodicCopies(this%as,this%is,this%r(:,ii),this%border,np,xtp)
                 do jj = 1,np
-                    if (inMyCell(this%is,xtp(:,jj),buffered=.true.)) mynAtoms = mynAtoms + 1
+                    if (inMyCell(this%is,xtp(:,jj),buffered=.true.,border=this%border)) mynAtoms = mynAtoms + 1
                 end do
             end do
 
@@ -1410,18 +1411,20 @@
             allocate(rt_tmp(3,mynAtoms))
             mynAtoms = 0
             do ii = 1,this%nAtoms
-                call periodicCopies(this%as,this%is,this%r(:,ii),np,xtp)
+                call periodicCopies(this%as,this%is,this%r(:,ii),this%border,np,xtp)
                 do jj = 1,np
-                    if (inMyCell(this%is,xtp(:,jj),buffered=.true.)) then
+                    if (inMyCell(this%is,xtp(:,jj),buffered=.true.,border=this%border)) then
                         mynAtoms = mynAtoms + 1
                         rt_tmp(1:3,mynAtoms) = real( xtp(1:3,jj),kind=real32 )
                     end if
                 end do
             end do
-            print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," mynAtoms = ",mynAtoms,"/",this%nAtoms
-            print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," minmax x ",minval(rt_tmp(1,:)),maxval(rt_tmp(1,:))
-            print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," minmax y ",minval(rt_tmp(2,:)),maxval(rt_tmp(2,:))
-            print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," minmax z ",minval(rt_tmp(3,:)),maxval(rt_tmp(3,:))
+            if (LIB_IMB_DBG) then
+                print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," mynAtoms = ",mynAtoms,"/",this%nAtoms
+                print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," minmax x ",minval(rt_tmp(1,:)),maxval(rt_tmp(1,:))
+                print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," minmax y ",minval(rt_tmp(2,:)),maxval(rt_tmp(2,:))
+                print *,"Lib_IntegrateManyBeams::setImagingSpace info - rank ",rank," minmax z ",minval(rt_tmp(3,:)),maxval(rt_tmp(3,:))
+            end if
 
             deallocate(this%r)                                  !   note that this deallocates the memory read in from the .xyz file
             this%nAtoms = mynAtoms
@@ -1434,7 +1437,7 @@
             call getBounds(this%is,bounds)
             allocate(this%slice(this%nPrec))
             do mm = 1,this%nPrec                
-                allocate(this%slice(mm)%phi(0:nG,bounds(1,1)-1:bounds(2,1)+1,bounds(1,2)-1:bounds(2,2)+1))
+                allocate(this%slice(mm)%phi(0:nG,bounds(1,1)-this%border:bounds(2,1)+this%border,bounds(1,2)-this%border:bounds(2,2)+this%border))
                 this%slice(mm)%phi = 0
             end do            
             if (rank==0) print *,"Lib_IntegrateManyBeams::setImagingSpace info - memory for Phi_g(r) ", size(this%slice(1)%phi)*16.0*this%nPrec/(1024*1024)," (Mb)"
@@ -1465,23 +1468,23 @@
 
 
 
-            if (rank==0) print *,"Lib_IntegrateManyBeams::computePhaseFields info - zlayer         ",iz,":",iz+this%zlayers-1," (+2)"
+            if (rank==0) write(*,fmt='(6(a,i6))') " Lib_IntegrateManyBeams::computePhaseFields info - zlayer         ",iz,":",iz+this%zlayers-1," / ",getnz(this%is)
 
         !---    size of problem                        
             call getBounds(this%is,bb)             
             nG = getn(this%gv)           
-            nvox = real(bb(2,1)+1-bb(1,1))*real(bb(2,2)+1-bb(1,2))*(this%zlayers + 2)               !   note: need to compute zlayers + 2 for rk4 to work
+            nvox = real(bb(2,1)+1+2*this%border-bb(1,1))*real(bb(2,2)+1+2*this%border-bb(1,2))*(this%zlayers + 2)               !   note: need to compute zlayers + 2 for rk4 to work
 
 
         !---    allocate memory for a z-slice of rho            
             if (firstCall) then
                 if (rank==0) then
-                    print *,"Lib_IntegrateManyBeams::computePhaseFields info - z bounds       ",bb(1,3),":",bb(2,3)
+                    !print *,"Lib_IntegrateManyBeams::computePhaseFields info - z bounds       ",bb(1,3),":",bb(2,3)
                     !print *,"Lib_IntegrateManyBeams::computePhaseFields info - computing      ",iz,":",iz+this%zlayers-1
                     print *,"Lib_IntegrateManyBeams::computePhaseFields info - memory for rho ", nvox*4.0/(1024.0*1024.0)," Mb"
                     !print *,"Lib_IntegrateManyBeams::computePhaseFields info - bb = ",bb," nG = ",nG
                 end if
-                allocate(this%rho( bb(1,1):bb(2,1),bb(1,2):bb(2,2),0:this%zlayers+1 ))                    
+                allocate(this%rho( bb(1,1)-this%border:bb(2,1)+this%border,bb(1,2)-this%border:bb(2,2)+this%border,0:this%zlayers+1 ))                    
             end if
 
         !---    we don't need to compute phase factors for all the g-vectors.
@@ -1509,30 +1512,30 @@
                 if (rank==0) then
                     print *,"Lib_IntegrateManyBeams::computePhaseFields info - memory for grad_arg_x ", (3*nGcalc)*nvox*8.0/(1024.0*1024.0)," Mb"
                 end if
-                allocate(this%grad_arg_x(3,nGcalc,bb(1,1):bb(2,1),bb(1,2):bb(2,2),0:this%zlayers+1))        !   note: 
+                allocate(this%grad_arg_x(3,nGcalc,bb(1,1)-this%border:bb(2,1)+this%border,bb(1,2)-this%border:bb(2,2)+this%border,0:this%zlayers+1))        !   note: 
             end if
 
 
         !---    compute the phase factor for my z-slice            
             iz_high = min( getnz(this%is) , iz + this%zlayers + 1 )
-            call computePhaseFactor( this%nAtoms,this%r,gg, this%is, getDelta(this%as),iz, iz_high, this%grad_arg_x,this%rho )
-            this%rho = real( this%rho/geta(this)**3 , kind=real32 )
+            call computePhaseFactor( this%nAtoms,this%r,gg, this%is, getDelta(this%as),iz, iz_high,this%border, this%grad_arg_x,this%rho )
+            !this%rho = real( this%rho , kind=real32 )
             !if ((rank==0).and.LIB_IMB_DBG) print *,"Lib_IntegrateManyBeams::computePhaseFields info - minmaxavg rho      ",minval(abs(this%rho)),maxval(abs(this%rho)),sum(abs(this%rho))/(size(this%rho))," (1/A^3) "
-            this%rho = densityScale( this%rho, real(this%omega0,kind=real32 ) )
-            if (rank==0) print *,"Lib_IntegrateManyBeams::computePhaseFields info - minmaxavg rho'     ",minval(abs(this%rho)),maxval(abs(this%rho)),sum(abs(this%rho))/(size(this%rho))
+            this%rho = densityScale( this%rho, real(this%omega0/geta(this)**3,kind=real32 ) )
+            if (LIB_IMB_DBG .and.(rank==0)) print *,"Lib_IntegrateManyBeams::computePhaseFields info - minmaxavg rho'     ",minval(abs(this%rho)),maxval(abs(this%rho)),sum(abs(this%rho))/(size(this%rho))
 
 
         !---    dump of atom positions and z-slice
             if (LIB_IMB_DBG .and. (iz==0)) then                
                 open(unit=500,file=trim(numberFile("test",rank,"xyz")),action="write")
-                    write(unit=500,fmt='(i8)') this%nAtoms + (bb(2,1)+1-bb(1,1))*(bb(2,2)+1-bb(1,2))*this%zlayers
+                    write(unit=500,fmt='(i8)') this%nAtoms + (bb(2,1)+2*this%border+1-bb(1,1))*(bb(2,2)+2*this%border+1-bb(1,2))*this%zlayers
                     write(unit=500,fmt='(a,9f12.6,a)') "Lattice=""",getA_super(this%as),""" Properties=Species:S:1:Pos:R:3:rho:R:1:GradArgX:R:3"
                     do ii = 1,this%nAtoms
                         write(unit=500,fmt='(a,10f16.8)') this%element,fromImagingSpace( this%as,this%r(:,ii) ),0.0d0,0.0d0,0.0d0,0.0d0
                     end do
                     do jz = 0,this%zlayers-1
-                        do jy = bb(1,2),bb(2,2)
-                            do jx = bb(1,1),bb(2,1)
+                        do jy = bb(1,2)-this%border,bb(2,2)+this%border
+                            do jx = bb(1,1)-this%border,bb(2,1)+this%border
                                 write(unit=500,fmt='(a,10f16.6)') "g",fromImagingSpace( this%as,(/jx,jy,iz+jz/) ),this%rho(jx,jy,jz),this%grad_arg_x(:,1,jx,jy,jz)
                             end do
                         end do

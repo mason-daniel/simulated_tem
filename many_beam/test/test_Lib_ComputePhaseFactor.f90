@@ -121,9 +121,9 @@
         mynAtoms = 0
         
         do ii = 1,NATOMS
-            call periodicCopies(as,is,real( r(:,ii),kind=real32 ),np,rtp)
+            call periodicCopies(as,is,real( r(:,ii),kind=real32 ),border=0,np=np,xtp=rtp)
             do jj = 1,np
-                if (inMyCell(is,rtp(:,jj),buffered=.true.)) then
+                if (inMyCell(is,rtp(:,jj),buffered=.true.,border=0)) then
                     mynAtoms = mynAtoms + 1
                     if (mynAtoms > size(myrt,dim=2)) then
                         allocate(myrt_tmp(3,ceiling(size(myrt,dim=2)*1.5)))
@@ -155,7 +155,7 @@
 
         Lib_ComputePhaseFactor_DBG = .true.
         timer = Callipers_ctor()
-        call computePhaseFactor( myNatoms,myrt,g, is,getdelta(as),bb(1,3),bb(2,3) ,grad_arg_x,rho )
+        call computePhaseFactor( myNatoms,myrt,g, is,getdelta(as),bb(1,3),bb(2,3),0 ,grad_arg_x,rho )
         print *,"bounds x ",lbound(grad_arg_x,dim=3),lbound(rho,dim=1) , ":" , ubound(grad_arg_x,dim=3),ubound(rho,dim=1) 
         print *,"bounds y ",lbound(grad_arg_x,dim=4),lbound(rho,dim=2) , ":" , ubound(grad_arg_x,dim=4),ubound(rho,dim=2) 
         print *,"bounds z ",lbound(grad_arg_x,dim=5),lbound(rho,dim=3) , ":" , ubound(grad_arg_x,dim=5),ubound(rho,dim=3) 
@@ -193,7 +193,7 @@
             call setnColumns(xyz,6)
             dat = 0
             do ii = 1,mynAtoms
-                if (inMyCell(is,myrt(:,ii),buffered=.false.)) then
+                if (inMyCell(is,myrt(:,ii),buffered=.false.,border=0)) then
                     call setAtomType(xyz,ii,1)
                 else
                     call setAtomType(xyz,ii,2)

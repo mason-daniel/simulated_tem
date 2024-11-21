@@ -603,8 +603,10 @@
             complex(kind=real64),dimension(0:this%nG)           ::      dphi_g_r    
             integer                                             ::      lbx,ubx,lby,uby         !   bounds of phi
            ! complex(kind=real64),dimension(:),pointer           ::      phi_g 
-            integer                                             ::      ii,jj,kk,nG_grad_arg_x
-            integer,dimension(this%nG)          ::          indx
+            logical                                             ::      border
+            integer                                             ::      ii,jj,kk
+            integer,save                                ::          nG_grad_arg_x = 0
+            integer,dimension(:),allocatable,save       ::          indx
 
             !print *,"integrate0 finddPhidz "!,size(phi,dim=1),size(dphidz,dim=1)
 
@@ -612,44 +614,48 @@
             lbx = lbound(phi,dim=2) ; ubx = ubound(phi,dim=2)
             lby = lbound(phi,dim=3) ; uby = ubound(phi,dim=3)
 
-            !  print *,"integrate0 finddPhidz phi    ",lbx,ubx,lby,uby," at ",iz
-            !  print *,"integrate0 finddPhidz dphidz ",lbound(dphidz,dim=2),ubound(dphidz,dim=2),lbound(dphidz,dim=3),ubound(dphidz,dim=3)
-            ! print *,"finddPhidz x      ",lbound(this%x,dim=2),ubound(this%x,dim=2),lbound(this%x,dim=3),ubound(this%x,dim=3),lbound(this%x,dim=4),ubound(this%x,dim=4)
+            ! print *,"finddPhidz phi    ",lbx,ubx,lby,uby," at ",iz
+            ! print *,"finddPhidz dphidz ",lbound(dphidz,dim=2),ubound(dphidz,dim=2),lbound(dphidz,dim=3),ubound(dphidz,dim=3)
+            ! !print *,"finddPhidz x      ",lbound(this%x,dim=2),ubound(this%x,dim=2),lbound(this%x,dim=3),ubound(this%x,dim=3),lbound(this%x,dim=4),ubound(this%x,dim=4)
             ! print *,"finddPhidz grad_arg_x ",lbound(this%grad_arg_x,dim=3),ubound(this%grad_arg_x,dim=3),lbound(this%grad_arg_x,dim=4),ubound(this%grad_arg_x,dim=4),lbound(this%grad_arg_x,dim=5),ubound(this%grad_arg_x,dim=5)
             ! print *,"finddPhidz rho    ",lbound(this%rho,dim=1),ubound(this%rho,dim=1),lbound(this%rho,dim=2),ubound(this%rho,dim=2),lbound(this%rho,dim=3),ubound(this%rho,dim=3)
 
         !---    only the "+ve" g-vectors are stored in this%x
         !       so find the index of each g-vector to the positive set...
-            nG_grad_arg_x = 0
-            indx = 0
-            do ii = 1,this%nG
-                if (isPositiveg(this%gv,ii)) then
-                    nG_grad_arg_x = nG_grad_arg_x + 1
-                    indx(ii) = nG_grad_arg_x
-                    
-                end if
-            end do
-        !   ... and then find the index of g-vectors in the negative set. 
-            do ii = 1,this%nG
-                if (.not. isPositiveg(this%gv,ii)) then
-                    do kk = 1,this%nG
-                        if (indx(getMinusg(this%gv,ii)) == kk) then
-                            indx(ii) = -kk
-                           ! print *,"g vec ",ii," is (-)",kk," in grad_arg_x"
-                            exit
-                        end if
-                    end do
-                end if
-            end do
-            ! do ii = 1,this%nG
-            !     print *,"g vec ",ii," is ",indx(ii)," in grad_arg_x"
-            ! end do
-
+            if (nG_grad_arg_x == 0) then
+                nG_grad_arg_x = 0
+                allocate(indx(0:this%nG))
+                indx = 0
+                do ii = 1,this%nG
+                    if (isPositiveg(this%gv,ii)) then
+                        nG_grad_arg_x = nG_grad_arg_x + 1
+                        indx(ii) = nG_grad_arg_x                    
+                    end if
+                end do
+            !   ... and then find the index of g-vectors in the negative set. 
+                do ii = 1,this%nG
+                    if (.not. isPositiveg(this%gv,ii)) then
+                        do kk = 1,this%nG
+                            if (indx(getMinusg(this%gv,ii)) == kk) then
+                                indx(ii) = -kk
+                            ! print *,"g vec ",ii," is (-)",kk," in grad_arg_x"
+                                exit
+                            end if
+                        end do
+                    end if
+                end do
+                ! do ii = 1,this%nG
+                !     print *,"g vec ",ii," is ",indx(ii)," in grad_arg_x"
+                ! end do
+            end if
 
             gradphi_r = 0.0d0
             grad_arg_x_r = 0.0d0
-            do iy = lby+1,uby-1
-                do ix = lbx+1,ubx-1
+            border = columnar           !   if using columnar approx, can treat all voxels as "border" ie don't use gradient term
+            do iy = lby,uby
+                do ix = lbx,ubx
+
+                    if (.not. columnar) border = (iy == lby).or.(iy == uby).or.(ix == lbx).or.(ix == ubx)           !   can't find gradient at the border
 
 
                     !LIB_MANYBEAM_DBG = ((abs(ix-7.5)<1).and.(abs(iy-7.5)<1)) 
@@ -667,8 +673,10 @@
                     rho_r = this%rho(ix,iy,iz)                                     
                     !print *,"ix,iy,x_r,rho_r ",ix,iy,x_r,rho_r
 
-
-                    if (.not. columnar) gradphi_r = getGradPhi( phi, ix,iy , this%a ) 
+                    gradphi_r = 0.0d0
+                    if (.not. border) then
+                        gradphi_r = getGradPhi( phi, ix,iy , this%a ) 
+                    end if
                     
 
                 !---    compute the propagation matrix

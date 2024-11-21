@@ -105,9 +105,9 @@
         mynAtoms = 0
         
         do ii = 1,NATOMS
-            call periodicCopies(as,is,real( x(:,ii),kind=real32 ),np,xtp)
+            call periodicCopies(as,is,real( x(:,ii),kind=real32 ),border=0,np=np,xtp=xtp)
             do jj = 1,np
-                if (inMyCell(is,xtp(:,jj),buffered=.true.)) then
+                if (inMyCell(is,xtp(:,jj),buffered=.true.,border=0)) then
                     mynAtoms = mynAtoms + 1
                     if (mynAtoms > size(myxt,dim=2)) then
                         allocate(myxt_tmp(3,ceiling(size(myxt,dim=2)*1.5)))
@@ -131,7 +131,7 @@
             call setnHeaderLines(xyz,0)
             call setnColumns(xyz,3)
             do ii = 1,mynAtoms
-                if (inMyCell(is,myxt(:,ii),buffered=.false.)) then
+                if (inMyCell(is,myxt(:,ii),buffered=.false.,border=0)) then
                     call setAtomType(xyz,ii,1)
                 else
                     call setAtomType(xyz,ii,2)

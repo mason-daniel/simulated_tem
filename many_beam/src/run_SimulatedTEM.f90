@@ -72,10 +72,12 @@
         logical                             ::      df = .true.             !   find dark field        
         real(kind=real64)                   ::      tilt_max = 5.0          !   maximum stage tilt (deg)
         logical                             ::      opDiffPatt = .true.     !   output diffraction pattern
-        integer                             ::      ntilt = 500             !   number of tilt angles searched for good diffraction pattern
+        integer                             ::      ntilt = 1000            !   number of tilt angles searched for good diffraction pattern
         real(kind=real64)                   ::      tweak = 0.001d0         !   tweak in tilt angle permitted to optimise diffraction pattern
         real(kind=real64)                   ::      imin = 0.001d0          !   intensity threshold for "important" beam
         logical                             ::      dbg = .false.   
+        real(kind=real64),dimension(9)      ::      Rmat = (/ 1,0,0,0,1,0,0,0,1 /)
+        logical                             ::      specifiedRmat = .false.
 
     !---    physical variables
         type(IntegrateManyBeams)            ::      imb
@@ -89,6 +91,7 @@
         integer             ::      ierror
         integer             ::      ii,ix,iy,iyp
         real(kind=real64)   ::      dd
+        character(len=5)    ::      aa
 
     !---    timing
         integer,parameter               ::      TIMER = kind(1_int32)
@@ -156,6 +159,7 @@
         call get( cla,"theta",tilt_max,LIB_CLA_OPTIONAL,"      maximum foil tilt angle (deg)",CLA_MICRO )           
         call get( cla,"ntilt",ntilt,LIB_CLA_OPTIONAL,"      number of foil tilt angles considered",CLA_MICRO )           
         call get( cla,"tweak",tweak,LIB_CLA_OPTIONAL,"      fine-tune tweak angle as fraction of theta",CLA_MICRO )           
+        ii=9; call get( cla,"R",Rmat,ii,LIB_CLA_OPTIONAL,"          specify tilt matrix",CLA_MICRO )           
 
 
         ii=0; dat = LIB_CLA_NODEFAULT_I; call get( cla,"g",dat,ii ,LIB_CLA_REQUIRED,"            g-vector reflection to output",CLA_DIFF )
@@ -194,6 +198,20 @@
         if ((rank==0) .and. .not. hasArgument(cla,"f")) print *,"error - expected argument '-f <filename>'"
         if ((rank==0) .and. .not. allocated(hkl)) print *,"error - expected argument '-g h,k,l' or '-g h,i,k,l'"
 
+
+        if (.not. hasArgument(cla,"o")) then
+            if (columnar) outfile = trim(outfile)//".c"
+            if (lossy)    outfile = trim(outfile)//".l"
+            if (twobeam)  outfile = trim(outfile)//".2"
+            if (nPrec>1)  outfile = trim(outfile)//".p"
+            write(aa,fmt='(3i1)') hkl
+            outfile = trim(outfile)//".g"//trim(aa)
+            write(aa,fmt='(f4.2)') n_g
+            outfile = trim(outfile)//".ng"//trim(aa)
+        end if
+
+
+        specifiedRmat = hasArgument(cla,"R")
 
         if (rank==0) call report(cla)
         if (hasHelpArgument(cla)) call errorExit("done")
@@ -238,9 +256,16 @@
             print *,"   ^^^^^^^^^^^^^^^^^^^"
             print *,"       accelerator voltage     ",V," (kV)"
             print *,"       temperature             ",T," (K)"
-            print *,"       max foil tilt angle     ",tilt_max," (deg)"
-            print *,"       number of foil tilts    ",ntilt
-            print *,"       tweak foil tilt         ",tweak*tilt_max," (deg)"
+            if (specifiedRmat) then
+                print *,"       specified tilt matrix"
+                write(*,fmt='(a,3f12.8)') "       ",Rmat(1:7:3)
+                write(*,fmt='(a,3f12.8)') "       ",Rmat(2:8:3)
+                write(*,fmt='(a,3f12.8)') "       ",Rmat(3:9:3)
+            else
+                print *,"       max foil tilt angle     ",tilt_max," (deg)"
+                print *,"       number of foil tilts    ",ntilt
+                print *,"       tweak foil tilt         ",tweak*tilt_max," (deg)"
+            end if
             print *,""
 
             print *,"   diffraction condition"
@@ -540,12 +565,15 @@
             real(kind=real64),dimension(3,3)    ::      foil_tilt2
             character(len=16)                   ::      form
             logical                             ::      maxIntensity = .false.      !   select tilt based on foil exit intensity
-             
+            character(len=256)                  ::      rstring
+            integer                             ::      ii,jj
 
 
             MillerBravais = (size(hkl)==4)
             form = "(a,3i4,a,f16.8)"
             if (MillerBravais) form = "(a,4i4,a,f10.6)"
+
+            if (n_g<1) call errorExit("tiltFoil error - n_g<1" )
 
             if (rank==0) then
                 call perfectLatticeIntensity(imb,hkl,maxIntensity,I_g)
@@ -554,44 +582,89 @@
 
             if (tilt_max<=0) return
  
-    
-            if (.not. ( (n_g==1.0).and.df) ) then
-                if (abs(n_g - nint(n_g)) < 1.0d-6) then
-                    if (rank==0) then
-                        print *,""
-                        write(*,fmt=form) " selecting bright reflection g,n_g = ",hkl,",",n_g
-                        print *,""
-                    end if
-                    hkl_bright = nint( hkl * n_g )
-                    call selectFoilTilt( imb,hkl_bright,tilt_max,NTILT,.true., foil_tilt )
-                else
-                    if (rank==0) then
-                        print *,""
-                        write(*,fmt=form) " selecting bright reflections for g,n_g = ",hkl,",",n_g
-                        print *,""
-                    end if
-                    hkl_bright = floor( hkl * n_g )
-                    call selectFoilTilt( imb,hkl_bright,tilt_max,NTILT,.true., foil_tilt )
-                    hkl_bright = ceiling( hkl * n_g )
-                    call selectFoilTilt( imb,hkl_bright,tilt_max,NTILT,.true., foil_tilt2 )
-                    foil_tilt = quaternionToRotMat( slerp( Quaternion_ctor(foil_tilt),Quaternion_ctor(foil_tilt2), ceiling(n_g) - n_g ) )       !   ceiling(x)-x = 1 for x = 3.00 and = 0 for 3.99
-                end if            
-                if (rank==0) print *,""
-                call applyFoilTilt(imb,foil_tilt)
+            if (specifiedRmat) then
+                foil_tilt = reshape( Rmat , (/3,3/) )
+                call applyFoilTilt( imb,foil_tilt )
                 if (rank==0) then
+                    if (n_g - floor(n_g) < 0.5) then
+                        hkl_bright = floor( hkl * n_g )
+                    else
+                        hkl_bright = ceiling( hkl * n_g )
+                    end if
                     call perfectLatticeIntensity(imb,hkl_bright,maxIntensity,I_g)
-                    write(*,fmt=form) " tiltFoil info - perfect lattice intensity ",hkl_bright," after tilt ",I_g
+                    write(*,fmt=form) " tiltFoil info - perfect lattice intensity at ",hkl_bright," after tilt ",I_g
                 end if
+            else
+        
+                if (.not. ( (n_g==1.0).and.df) ) then
+                    if (abs(n_g - nint(n_g)) < 1.0d-6) then
+                        if (rank==0) then
+                            print *,""
+                            write(*,fmt=form) " selecting bright reflection g,n_g = ",hkl,",",n_g
+                            print *,""
+                        end if
+                        hkl_bright = nint( hkl * n_g )
+                        call selectFoilTilt( imb,hkl_bright,tilt_max,NTILT,.true., foil_tilt )
+                    else
+                        if (rank==0) then
+                            print *,""
+                            write(*,fmt=form) " selecting bright reflections for g,n_g = ",hkl,",",n_g
+                            print *,""
+                        end if
+                        hkl_bright = floor( hkl * n_g )
+                        call selectFoilTilt( imb,hkl_bright,tilt_max,NTILT,.true., foil_tilt )
+                        hkl_bright = ceiling( hkl * n_g )
+                        call selectFoilTilt( imb,hkl_bright,tilt_max,NTILT,.true., foil_tilt2 )
+                        foil_tilt = quaternionToRotMat( slerp( Quaternion_ctor(foil_tilt),Quaternion_ctor(foil_tilt2), ceiling(n_g) - n_g ) )       !   ceiling(x)-x = 1 for x = 3.00 and = 0 for 3.99
+
+                        if (n_g - floor(n_g) < 0.5) then
+                            hkl_bright = floor( hkl * n_g )
+                        else
+                            hkl_bright = ceiling( hkl * n_g )
+                        end if
+
+                    end if            
+                    if (rank==0) print *,""
+                    call applyFoilTilt(imb,foil_tilt)
+                    if (rank==0) then
+                        call perfectLatticeIntensity(imb,hkl_bright,maxIntensity,I_g)
+                        write(*,fmt=form) " tiltFoil info - perfect lattice intensity at ",hkl_bright," after tilt ",I_g
+                    end if
+                end if
+                
+                ! if (dark) then
+                ! !   add an additional tweak to make hkl extra dark
+                !     call selectFoilTilt( imb,hkl,tilt_max*TWEAK,NTILT,.false., foil_tilt )
+                !     call applyFoilTilt(imb,foil_tilt)
+                !     if (rank==0) then
+                !         call perfectLatticeIntensity(imb,hkl,maxIntensity,I_g)
+                !         write(*,fmt=form)  " tiltFoil info - perfect lattice intensity ",hkl," after tilt to dark field ",I_g
+                !     end if
+                ! end if
+
+            end if                
+
+
+            if ( (rank==0).and.(n_g>1) ) then
+                call perfectLatticeIntensity(imb,hkl,maxIntensity,I_g)
+                write(*,fmt=form)  " tiltFoil info - perfect lattice intensity at ",hkl," after tilt ",I_g
             end if
-            
-            if (dark) then
-            !   add an additional tweak to make hkl extra dark
-                call selectFoilTilt( imb,hkl,tilt_max*TWEAK,NTILT,.false., foil_tilt )
-                call applyFoilTilt(imb,foil_tilt)
-                if (rank==0) then
-                    call perfectLatticeIntensity(imb,hkl,maxIntensity,I_g)
-                    write(*,fmt=form)  " tiltFoil info - perfect lattice intensity ",hkl," after tilt to dark field ",I_g
-                end if
+
+            if (rank==0) then
+            !---    output the selected rotation matrix in a form that can be reentered for next calculation
+                write(rstring,fmt='(9(f16.12,a1))') foil_tilt(1,1),",",foil_tilt(2,1),",",foil_tilt(3,1),      &
+                                                ",",foil_tilt(1,2),",",foil_tilt(2,2),",",foil_tilt(3,2),      &
+                                                ",",foil_tilt(1,3),",",foil_tilt(2,3),",",foil_tilt(3,3)
+                jj = 0
+                do ii = 1,len(rstring)
+                    if (rstring(ii:ii)/=" ") then
+                        jj = jj + 1
+                        rstring(jj:jj) = rstring(ii:ii)
+                    end if
+                end do
+                
+
+                write(*,fmt='(a)') " tiltFoil info -R "//rstring(1:jj)
             end if
 
             return
@@ -659,7 +732,7 @@
             if (MillerBravais) form = "(a,i4,a,4i4,a,f10.6)"
 
             nn = 1
-            if (rank == 0) write (*,fmt=form) " selectImportantBeams info - selected beam ",nn," reflection ",hkl(:,nn)," intensity ",I_g(0)
+            if (rank == 0) write (*,fmt=form) " selectImportantBeams info - selected beam ",nn," reflection ",hkl(:,nn)," max intensity ",I_g(0)
             do kk = 1,nG
                 if (I_g(kk)>=imin) then
                     nn = nn + 1
@@ -668,7 +741,7 @@
                     else
                         hkl(:,nn) = gethkl(gv,kk)
                     end if
-                    if (rank == 0) write (*,fmt=form) " selectImportantBeams info - selected beam ",nn," reflection ",hkl(:,nn)," intensity ",I_g(kk)
+                    if (rank == 0) write (*,fmt=form) " selectImportantBeams info - selected beam ",nn," reflection ",hkl(:,nn)," max intensity ",I_g(kk)
                 end if
             end do
             

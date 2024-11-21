@@ -77,7 +77,7 @@
     !     end subroutine computePhaseFactor0
 
 
-        subroutine computePhaseFactor1( mynAtoms, rt,g, img, delta,lbz,ubz, grad_arg_x,rho )
+        subroutine computePhaseFactor1( mynAtoms, rt,g, img, delta,lbz,ubz,border, grad_arg_x,rho )
     !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      compute a smoothed approximation x ~ exp( - i g.u )  
     !*      and at the same time a density estimation rho(r) and grad x
@@ -105,10 +105,10 @@
             type(ImagingSpace),intent(in)                               ::      img 
             real(kind=real64),dimension(3),intent(in)                   ::      delta   !   after rotation, it is necessary to apply an offst to atom positions so that central atom ends up in centre of box.
             integer,intent(in)                                          ::      lbz,ubz              !   slice of the region covered by the nodes  
-            real(kind=real32),dimension(:,:,:,:,:),pointer,intent(inout)        ::      grad_arg_x   !   (3,1:nGvec,lbx:ubx,lby:uby,lbz:ubz)
-            real(kind=real32),dimension(:,:,:),pointer,intent(inout)            ::      rho     !   (lbx:ubx,lby:uby,lbz:ubz)
+            integer,intent(in)                                          ::      border
+            real(kind=real32),dimension(:,:,:,:,:),pointer,intent(inout)        ::      grad_arg_x   !   (3,1:nGvec,lbx-border:ubx+border,lby-border:uby+border,lbz:ubz)
+            real(kind=real32),dimension(:,:,:),pointer,intent(inout)            ::      rho     !   (lbx-border:ubx+border,lby-border:uby+border,lbz:ubz)
            
-            complex(kind=real32),dimension(:,:,:,:),pointer     ::      xx              !   (1:nGvec,lbx:ubx,lby:uby,lbz:ubz)            
             real(kind=real64),dimension(size(g,dim=2))          ::      gdotoff
             integer                                             ::      nGvec                  
             integer                                             ::      nn              !   number of points to search in kernel
@@ -127,23 +127,26 @@
             integer             ::      ii,jj,kk 
             integer             ::      nInBufferedBounds,nBuf
  
-
+            complex(kind=real32),dimension(:,:,:,:),allocatable,save ::      xx              !   (1:nGvec,lbx-border-1:ubx+border+1,lby-border-1:uby+border+1,-1:ubz-lbz+1)            
+            
         !---    find the size of the problem                 
             nGvec = size(g,dim=2)
 
         !---    find the bounds of the set of nodes I am adding to
-            lbx = lbound(rho,dim=1) ; ubx = ubound(rho,dim=1)
-            lby = lbound(rho,dim=2) ; uby = ubound(rho,dim=2)
-            
+            call getBounds( img, lbx,ubx,lby,uby )
+            ! lbx = lbound(rho,dim=1) ; ubx = ubound(rho,dim=1)
+            ! lby = lbound(rho,dim=2) ; uby = ubound(rho,dim=2)
+            !print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - getBounds ",lbx,ubx,lby,uby," rho ",lbound(rho,dim=1),ubound(rho,dim=1),lbound(rho,dim=2),ubound(rho,dim=2)
 
-            allocate(xx(1:nGvec,lbx-1:ubx+1,lby-1:uby+1,-1:ubz+1-lbz))
+            if (.not. allocated(xx)) &
+            allocate(xx(1:nGvec,lbx-border-1:ubx+border+1,lby-border-1:uby+border+1,-1:ubz+1-lbz))              !       +/- 1 because need gradient correct 
             xx = 0.0
             grad_arg_x = 0.0 
             rho = 0.0 
 
 
 
-            if (rank==0) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - computing grad_arg_x(r) and rho(r) for z=",lbz,":",ubz," alloc ",lbound(rho,dim=3),":",ubound(rho,dim=3)
+            if ((rank==0) .and. (Lib_ComputePhaseFactor_DBG)) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - computing grad_arg_x(r) and rho(r) for z=",lbz,":",ubz," alloc ",lbound(rho,dim=3),":",ubound(rho,dim=3)
             
 
 
@@ -276,8 +279,8 @@
 
        !---    ensure x is phase factor ( should have |x|=1 )
              do jz = -1,ubz+1-lbz
-                do jy = lby-1,uby+1
-                    do jx = lbx-1,ubx+1
+                do jy = lby-border-1,uby+border+1
+                    do jx = lbx-border-1,ubx+border+1
                         do jj = 1,nGvec
                             d32 = abs( xx(jj,jx,jy,jz) )
                             if (d32>0) then
@@ -290,17 +293,17 @@
                 end do
             end do
 
-            if (rank==0) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - in bounds ",nInBufferedBounds,"/",myNatoms
-            if (rank==0) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - computing x* grad x"
+            if ((rank==0) .and. (Lib_ComputePhaseFactor_DBG)) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - in bounds ",nInBufferedBounds,"/",myNatoms
+            if ((rank==0) .and. (Lib_ComputePhaseFactor_DBG)) print *,"Lib_ComputePhaseFactor::ComputePhaseFactor info - computing x* grad x"
 
 
         !---    compute x* grad x everywhere      
             do jz = 0,ubz-lbz
-                if (rank==0) call progressBar( jz+1,ubz+1-lbz )
-                do jy = lby,uby
+                !if (rank==0) call progressBar( jz+1,ubz+1-lbz )
+                do jy = lby-border,uby+border
 
                     local_x(:,0:1,-1:1,-1:1) = xx(:,lbx-1:lbx,jy-1:jy+1,jz-1:jz+1)
-                    do jx = lbx,ubx
+                    do jx = lbx-border,ubx+border
                         local_x(:,-1,:,:) = local_x(:,0,:,:)
                         local_x(:,0,:,:) = local_x(:,1,:,:)
                         local_x(:,1,:,:) = xx(:,jx+1,jy-1:jy+1,jz-1:jz+1) 
@@ -331,7 +334,7 @@
             grad_arg_x = grad_arg_x * real( 1/aa , kind=real32 )         !   normalise by length
 
             
-            deallocate(xx)
+            !deallocate(xx)
            
             !grad_arg_x = grad_arg_x * 1.5
             return
@@ -341,31 +344,31 @@
 
             pure logical function inBounds(jx,jy,jz)
         !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        !*      is the node (jx,jy,jz) in bounds of the array x(:,:,:,:)
+        !*      is the node (jx,jy,jz) in bounds of the array rho(:,:,:,:)
                 integer,intent(in)          ::      jx,jy,jz
-                inBounds = (jx>=lbx).and.(jx<=ubx)
-                inBounds = inBounds.and.(jy>=lby).and.(jy<=uby)
+                inBounds = (jx>=lbx-border).and.(jx<=ubx+border)
+                inBounds = inBounds.and.(jy>=lby-border).and.(jy<=uby+border)
                 inBounds = inBounds.and.(jz>=lbz).and.(jz<=ubz)
                 return
             end function inBounds
 
 
             pure logical function inxBounds(jx,jy,jz)
-        !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        !*      is the node (jx,jy,jz) in bounds of the array x(:,:,:,:) + buffer
+        !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        !*      is the node (jx,jy,jz) in bounds of the array x(:,:,:,:)  
                 integer,intent(in)          ::      jx,jy,jz
-                inxBounds = (jx>=lbx-1).and.(jx<=ubx+1)
-                inxBounds = inxBounds.and.(jy>=lby-1).and.(jy<=uby+1)
+                inxBounds = (jx>=lbx-border-1).and.(jx<=ubx+border+1)
+                inxBounds = inxBounds.and.(jy>=lby-border-1).and.(jy<=uby+border+1)
                 inxBounds = inxBounds.and.(jz>=lbz-1).and.(jz<=ubz+1)
                 return
             end function inxBounds
 
             pure logical function inAtomBounds(jx,jy,jz)
-        !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         !*      is the node (jx,jy,jz) in bounds of the array x(:,:,:,:) + buffer
                 integer,intent(in)          ::      jx,jy,jz
-                inAtomBounds = (jx>=lbx-1-nBuf).and.(jx<=ubx+1+nBuf)
-                inAtomBounds = inAtomBounds.and.(jy>=lby-1-nBuf).and.(jy<=uby+1+nBuf)
+                inAtomBounds = (jx>=lbx-border-1-nBuf).and.(jx<=ubx+border+1+nBuf)
+                inAtomBounds = inAtomBounds.and.(jy>=lby-border-1-nBuf).and.(jy<=uby+border+1+nBuf)
                 inAtomBounds = inAtomBounds.and.(jz>=lbz-1-nBuf).and.(jz<=ubz+1+nBuf)
                 return
             end function inAtomBounds
@@ -695,7 +698,7 @@
         end function smoothstep64
 
         elemental real(kind=real32) function densityScale32( rho,omega )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      smooth density function, returns 0 for rho*omega <= 0.5, 1 for rho*omega >= 1
             real(kind=real32),intent(in)            ::      rho
             real(kind=real32),intent(in)            ::      omega
@@ -706,7 +709,7 @@
         end function densityScale32
 
         elemental real(kind=real64) function densityScale64( rho,omega )
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      smooth density function, returns 0 for rho*omega <= 0.5, 1 for rho*omega >= 1
             real(kind=real64),intent(in)            ::      rho
             real(kind=real64),intent(in)            ::      omega

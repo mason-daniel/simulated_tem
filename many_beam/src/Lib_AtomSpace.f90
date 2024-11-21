@@ -399,17 +399,18 @@
             return
         end subroutine periodicCopies0
                     
-        subroutine periodicCopies1(this,img,x,np,xtp)
-    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        subroutine periodicCopies1(this,img,x,border,np,xtp)
+    !---^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !*      given an atom at x, and an imaging space dimension (Nx,Ny,Nz)
     !*      return the number of periodic copies np and position of periodic copies xtp(1:3,1:np) needed
     !*      note that it may be necessary to place atoms one or two cells outside this region too.
             type(AtomSpace),intent(in)                  ::      this
             type(ImagingSpace),intent(in)               ::      img
             real(kind=real32),dimension(3),intent(in)   ::      x
+            integer,intent(in)                          ::      border              !   required non-zero for non-columnar approx
             integer,intent(out)                         ::      np
             real(kind=real64),dimension(:,:),intent(inout)  ::      xtp             !   (3,9)
-            call periodicCopies0(this,x,getNx(img),getNy(img),getnBuf(img)+1,np,xtp)
+            call periodicCopies0(this,x,getNx(img),getNy(img),getnBuf(img)+border+1,np,xtp)
             return
         end subroutine periodicCopies1
 
